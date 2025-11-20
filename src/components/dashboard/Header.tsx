@@ -1,9 +1,9 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { LogOut } from "lucide-react";
+import { LogOut, BarChart3, LayoutDashboard } from "lucide-react";
 import { signOut } from "@/lib/supabase";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 interface HeaderProps {
   userEmail: string;
@@ -12,6 +12,7 @@ interface HeaderProps {
 
 const Header = ({ userEmail, userName }: HeaderProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogout = async () => {
     const { error } = await signOut();
@@ -29,6 +30,8 @@ const Header = ({ userEmail, userName }: HeaderProps) => {
     .join("")
     .toUpperCase();
 
+  const isAnalyticsPage = location.pathname === "/analytics";
+
   return (
     <header className="border-b bg-card">
       <div className="container mx-auto px-4 py-4 flex items-center justify-between">
@@ -40,6 +43,24 @@ const Header = ({ userEmail, userName }: HeaderProps) => {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <nav className="hidden md:flex items-center gap-2">
+            <Button
+              variant={!isAnalyticsPage ? "default" : "ghost"}
+              onClick={() => navigate("/")}
+              className={!isAnalyticsPage ? "bg-gradient-instagram" : ""}
+            >
+              <LayoutDashboard className="h-4 w-4 mr-2" />
+              Dashboard
+            </Button>
+            <Button
+              variant={isAnalyticsPage ? "default" : "ghost"}
+              onClick={() => navigate("/analytics")}
+              className={isAnalyticsPage ? "bg-gradient-instagram" : ""}
+            >
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Analytics
+            </Button>
+          </nav>
           <div className="text-right hidden sm:block">
             <p className="text-sm font-medium">{userName}</p>
             <p className="text-xs text-muted-foreground">{userEmail}</p>
