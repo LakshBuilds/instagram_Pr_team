@@ -61,7 +61,6 @@ export interface ApifyInstagramPost {
   locationName?: string; // Location name from Apify
   locationId?: string; // Location ID from Apify
   productType?: string; // Product type from Apify
-  isSponsored?: boolean; // Is sponsored post
   // New Instagram API fields
   is_post_live_clips_media?: boolean;
   video_duration?: number;
@@ -136,6 +135,7 @@ export interface TransformedReel {
   usertags?: any;
   videourl?: string;
   audiourl?: string;
+  locationname?: string;
 }
 
 /**

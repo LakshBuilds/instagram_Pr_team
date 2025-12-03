@@ -146,10 +146,10 @@ const Header = () => {
     <header className="border-b bg-card">
       <div className="container mx-auto px-4 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-instagram rounded-full" />
+          {/* <img src="/image.png" alt="Logo" className="w-10 h-10 rounded-full object-cover" /> */}
           <div>
-            <h1 className="text-xl font-bold">Instagram Creators</h1>
-            <p className="text-sm text-muted-foreground">Dashboard</p>
+            {/* <h1 className="text-xl font-bold">PR Team</h1> */}
+            {/* <p className="text-sm text-muted-foreground">Dashboard</p> */}
           </div>
         </div>
         <div className="flex items-center gap-3">

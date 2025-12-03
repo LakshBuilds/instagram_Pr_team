@@ -28,12 +28,12 @@ interface Reel {
   commentscount: number | null;
   videoplaycount: number | null;
   videoviewcount?: number | null;
-  payout: number | string | null;
+  payout: number | null;
   permalink: string | null;
   takenat: string | null;
   created_by_user_id: string | null;
   created_by_name: string | null;
-  created_by_email: string | null;
+  created_by_email?: string | null;
   is_archived?: boolean | null;
   video_duration?: number | null;
   has_tagged_users?: boolean | null;

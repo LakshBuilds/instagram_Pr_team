@@ -84,7 +84,7 @@ const ImportReel = () => {
             return;
           }
           
-          transformedReel = transformInternalApiToReel(internalData);
+          transformedReel = transformInternalApiToReel(internalData, singleReelUrl);
           console.log("Internal API transformed reel:", transformedReel);
         } catch (internalError: any) {
           console.error("Internal API error:", internalError);
@@ -206,7 +206,7 @@ const ImportReel = () => {
             const internalData = await fetchFromInternalApi(url, 1); // Priority 1 for imports
             
             if (internalData) {
-              const transformedReel = transformInternalApiToReel(internalData);
+              const transformedReel = transformInternalApiToReel(internalData, url);
               const result = await saveReelsToSupabase([transformedReel], userInfo);
               
               if (result.errors === 0) {

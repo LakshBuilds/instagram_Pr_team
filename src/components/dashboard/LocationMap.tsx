@@ -17,7 +17,7 @@ interface LanguageLocation {
 interface Reel {
   id: string;
   locationname: string | null;
-  language: string | null;
+  language?: string | null;
   videoplaycount: number | null;
   likescount: number | null;
   commentscount: number | null;

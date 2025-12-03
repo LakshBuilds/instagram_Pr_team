@@ -106,7 +106,7 @@ app.post('/api/apify/reels', async (req, res) => {
 });
 
 // Internal API proxy - to avoid CORS issues
-const INTERNAL_API_URL = process.env.INTERNAL_API_URL || 'https://ruby-richards-meant-mix.trycloudflare.com';
+const INTERNAL_API_URL = process.env.INTERNAL_API_URL || 'https://emerald-prostores-crafts-history.trycloudflare.com'
 
 app.post('/api/internal/scrape', async (req, res) => {
   try {
@@ -146,4 +146,3 @@ app.post('/api/internal/scrape', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Apify API server running on http://localhost:${PORT}`);
 });
-

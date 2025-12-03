@@ -37,9 +37,11 @@ interface Reel {
   permalink: string | null;
   takenat: string | null;
   created_by_user_id: string | null;
+  created_by_email?: string | null;
   is_archived?: boolean | null;
   language?: string | null;
-  locationname?: string | null;
+  locationname: string | null;
+  shortcode?: string | null;
 }
 
 const Dashboard = () => {
@@ -110,19 +112,19 @@ const Dashboard = () => {
 
       // Apply language filter if not "All"
       if (selectedLanguage !== "All") {
-        userReelsQuery = userReelsQuery.eq("language", selectedLanguage);
-        teamReelsQuery = teamReelsQuery.eq("language", selectedLanguage);
+        userReelsQuery = (userReelsQuery as any).eq("language", selectedLanguage);
+        teamReelsQuery = (teamReelsQuery as any).eq("language", selectedLanguage);
       }
 
       // Apply location filter if not "All"
       if (selectedLocation !== "All") {
-        userReelsQuery = userReelsQuery.ilike("locationname", `%${selectedLocation}%`);
-        teamReelsQuery = teamReelsQuery.ilike("locationname", `%${selectedLocation}%`);
+        userReelsQuery = (userReelsQuery as any).ilike("locationname", `%${selectedLocation}%`);
+        teamReelsQuery = (teamReelsQuery as any).ilike("locationname", `%${selectedLocation}%`);
       }
 
       // Execute queries
-      const { data: userReels, error: userError } = await userReelsQuery.order("takenat", { ascending: false });
-      const { data: teamReels, error: teamError } = await teamReelsQuery.order("takenat", { ascending: false });
+      const { data: userReels, error: userError } = await (userReelsQuery as any).order("takenat", { ascending: false });
+      const { data: teamReels, error: teamError } = await (teamReelsQuery as any).order("takenat", { ascending: false });
 
       if (userError) {
         console.error("Error fetching user reels:", userError);
@@ -157,10 +159,10 @@ const Dashboard = () => {
       setAllReels(teamReels || []);
       
       // Fetch failed reels count
-      const { count } = await supabase
+      const countQuery = supabase
         .from("reels")
-        .select("*", { count: "exact", head: true })
-        .eq("refresh_failed", true);
+        .select("*", { count: "exact", head: true });
+      const { count } = await (countQuery as any).eq("refresh_failed", true);
       setFailedReelsCount(count || 0);
     } catch (error) {
       console.error("fetchReels error:", error);
@@ -169,9 +171,9 @@ const Dashboard = () => {
   };
 
   const calculateStats = (reels: Reel[]) => {
-    // Deduplicate reels by id to avoid counting duplicates
+    // Deduplicate reels by shortcode to avoid counting duplicates
     const uniqueReels = reels.filter((reel, index, self) => 
-      index === self.findIndex(r => r.id === reel.id)
+      index === self.findIndex(r => (r.shortcode || r.id) === (reel.shortcode || reel.id))
     );
     
     return {
@@ -361,9 +363,10 @@ const Dashboard = () => {
       };
       
       // Fetch only failed reels
-      const { data: failedReels, error: fetchError } = await supabase
+      const failedQuery = supabase
         .from("reels")
-        .select("*")
+        .select("*");
+      const { data: failedReels, error: fetchError } = await (failedQuery as any)
         .eq("refresh_failed", true)
         .or(`permalink.not.is.null,url.not.is.null,inputurl.not.is.null`);
       

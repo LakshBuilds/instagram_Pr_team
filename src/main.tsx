@@ -10,3 +10,10 @@ createRoot(document.getElementById("root")!).render(
     <App />
   </ClerkProvider>
 );
+
+
+createRoot(document.getElementById("root")!).render(
+  <ClerkProvider publishableKey={clerkPublishableKey}>
+    <App />
+  </ClerkProvider>
+);
