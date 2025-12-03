@@ -1,0 +1,23 @@
+services:
+  # Frontend - Static Site
+  - type: web
+    name: instagram-pr-team
+    runtime: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: VITE_INTERNAL_API_URL
+        sync: false
+      - key: VITE_APIFY_TOKEN
+        sync: false
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+
