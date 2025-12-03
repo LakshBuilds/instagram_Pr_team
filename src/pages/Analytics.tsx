@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { User } from "@supabase/supabase-js";
 import { DateRange } from "react-day-picker";
 import { format, startOfDay, endOfDay, subDays, isWithinInterval } from "date-fns";
 import Header from "@/components/dashboard/Header";
@@ -9,14 +8,17 @@ import DateRangeFilter from "@/components/analytics/DateRangeFilter";
 import TrendChart from "@/components/analytics/TrendChart";
 import PerformanceMetrics from "@/components/analytics/PerformanceMetrics";
 import TopPerformers from "@/components/analytics/TopPerformers";
+import EngagementScatterChart from "@/components/analytics/EngagementScatterChart";
+import RevenueScatterChart from "@/components/analytics/RevenueScatterChart";
+import DurationPerformanceChart from "@/components/analytics/DurationPerformanceChart";
+import ThemePerformanceChart from "@/components/analytics/ThemePerformanceChart";
+import TaggedUsersChart from "@/components/analytics/TaggedUsersChart";
+import SoundPerformanceChart from "@/components/analytics/SoundPerformanceChart";
+import PostingTimeHeatmap from "@/components/analytics/PostingTimeHeatmap";
+import CreatorComparisonChart from "@/components/analytics/CreatorComparisonChart";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Heart, Eye, DollarSign, Video } from "lucide-react";
-
-interface Profile {
-  id: string;
-  email: string;
-  full_name: string;
-}
+import { useUser } from "@clerk/clerk-react";
 
 interface Reel {
   id: string;
@@ -24,17 +26,25 @@ interface Reel {
   caption: string | null;
   likescount: number | null;
   commentscount: number | null;
-  videoviewcount: number | null;
-  payout: number | null;
+  videoplaycount: number | null;
+  videoviewcount?: number | null;
+  payout: number | string | null;
   permalink: string | null;
   takenat: string | null;
   created_by_user_id: string | null;
+  created_by_name: string | null;
+  created_by_email: string | null;
+  is_archived?: boolean | null;
+  video_duration?: number | null;
+  has_tagged_users?: boolean | null;
+  usertags?: any;
+  original_sound_info?: any;
+  music_info?: any;
 }
 
 const Analytics = () => {
   const navigate = useNavigate();
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const { user, isLoaded } = useUser();
   const [reels, setReels] = useState<Reel[]>([]);
   const [loading, setLoading] = useState(true);
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
@@ -42,48 +52,33 @@ const Analytics = () => {
     to: new Date(),
   });
 
+  const userEmail = user?.primaryEmailAddress?.emailAddress;
+
   useEffect(() => {
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate("/auth");
-        return;
-      }
-      setUser(session.user);
-      await fetchProfile(session.user.id);
-      await fetchReels(session.user.id);
+    if (!isLoaded) return;
+    if (!user) {
+      navigate("/auth");
+      return;
+    }
+    const load = async () => {
+      await fetchReels();
       setLoading(false);
     };
+    load();
+  }, [isLoaded, user, navigate]);
 
-    checkUser();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        navigate("/auth");
-      } else {
-        setUser(session.user);
-        fetchProfile(session.user.id);
-        fetchReels(session.user.id);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate]);
-
-  const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .single();
-    setProfile(data);
-  };
-
-  const fetchReels = async (userId: string) => {
-    const { data } = await supabase
+  const fetchReels = async () => {
+    console.log("📊 Analytics: Fetching all reels...");
+    const { data, error } = await supabase
       .from("reels")
       .select("*")
       .order("takenat", { ascending: false });
+
+    if (error) {
+      console.error("❌ Error fetching reels:", error);
+    } else {
+      console.log(`✅ Analytics: Fetched ${data?.length || 0} total reels`);
+    }
 
     setReels(data || []);
   };
@@ -102,20 +97,27 @@ const Analytics = () => {
   };
 
   const filteredReels = filterReelsByDateRange(reels);
-  const userReels = filteredReels.filter(r => r.created_by_user_id === user?.id);
+  
+  // Filter user's reels by email (matching Dashboard logic)
+  const userReels = filteredReels.filter(r => r.created_by_email === userEmail);
+  
+  console.log(`📊 Analytics: ${filteredReels.length} reels in date range, ${userReels.length} are yours (${userEmail})`);
 
   const prepareChartData = (reels: Reel[]) => {
-    const dataMap = new Map<string, { likes: number; views: number; payout: number; count: number }>();
+    const dataMap = new Map<string, { likes: number; views: number; comments: number; payout: number; count: number }>();
 
     reels.forEach((reel) => {
       if (!reel.takenat) return;
       const date = format(new Date(reel.takenat), "MMM dd");
-      const existing = dataMap.get(date) || { likes: 0, views: 0, payout: 0, count: 0 };
+      const existing = dataMap.get(date) || { likes: 0, views: 0, comments: 0, payout: 0, count: 0 };
+      
+      const payoutValue = typeof reel.payout === 'number' ? reel.payout : parseFloat(String(reel.payout || '0'));
       
       dataMap.set(date, {
         likes: existing.likes + (reel.likescount || 0),
-        views: existing.views + (reel.videoviewcount || 0),
-        payout: existing.payout + (parseFloat(String(reel.payout)) || 0),
+        views: existing.views + (reel.videoplaycount || 0),
+        comments: existing.comments + (reel.commentscount || 0),
+        payout: existing.payout + payoutValue,
         count: existing.count + 1,
       });
     });
@@ -128,15 +130,21 @@ const Analytics = () => {
   const calculateMetrics = (current: Reel[], previous: Reel[]) => {
     const currentStats = {
       likes: current.reduce((sum, r) => sum + (r.likescount || 0), 0),
-      views: current.reduce((sum, r) => sum + (r.videoviewcount || 0), 0),
-      payout: current.reduce((sum, r) => sum + (parseFloat(String(r.payout)) || 0), 0),
+      views: current.reduce((sum, r) => sum + (r.videoplaycount || 0), 0),
+      payout: current.reduce((sum, r) => {
+        const payoutValue = typeof r.payout === 'number' ? r.payout : parseFloat(String(r.payout || '0'));
+        return sum + payoutValue;
+      }, 0),
       reels: current.length,
     };
 
     const previousStats = {
       likes: previous.reduce((sum, r) => sum + (r.likescount || 0), 0),
-      views: previous.reduce((sum, r) => sum + (r.videoviewcount || 0), 0),
-      payout: previous.reduce((sum, r) => sum + (parseFloat(String(r.payout)) || 0), 0),
+      views: previous.reduce((sum, r) => sum + (r.videoplaycount || 0), 0),
+      payout: previous.reduce((sum, r) => {
+        const payoutValue = typeof r.payout === 'number' ? r.payout : parseFloat(String(r.payout || '0'));
+        return sum + payoutValue;
+      }, 0),
       reels: previous.length,
     };
 
@@ -160,7 +168,7 @@ const Analytics = () => {
       },
       {
         title: "Total Payout",
-        value: `$${currentStats.payout.toFixed(2)}`,
+        value: `₹${currentStats.payout.toFixed(2)}`,
         change: calculateChange(currentStats.payout, previousStats.payout),
         icon: <DollarSign className="h-4 w-4 text-chart-5" />,
       },
@@ -205,10 +213,7 @@ const Analytics = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header
-        userEmail={profile?.email || user?.email || ""}
-        userName={profile?.full_name || "User"}
-      />
+      <Header />
       <main className="container mx-auto px-4 py-8">
         <div className="flex flex-col gap-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -235,20 +240,18 @@ const Analytics = () => {
               <TrendChart
                 data={chartData}
                 title="Engagement Trends"
-                description="Likes and views over time"
+                description="Likes, views, and comments over time"
                 dataKeys={[
                   { key: "likes", name: "Likes", color: "hsl(var(--chart-2))" },
                   { key: "views", name: "Views", color: "hsl(var(--chart-4))" },
+                  { key: "comments", name: "Comments", color: "hsl(var(--chart-3))" },
                 ]}
               />
 
-              <TrendChart
-                data={chartData}
+              <RevenueScatterChart
+                reels={filteredReels}
                 title="Revenue Trends"
-                description="Payout trends over time"
-                dataKeys={[
-                  { key: "payout", name: "Payout ($)", color: "hsl(var(--chart-5))" },
-                ]}
+                description="Per video views vs payout relationship"
               />
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -256,33 +259,46 @@ const Analytics = () => {
                 <TopPerformers reels={filteredReels} title="Top by Views" metric="views" />
                 <TopPerformers reels={filteredReels} title="Top by Payout" metric="payout" />
               </div>
+
+              <EngagementScatterChart reels={filteredReels} />
+              
+              <DurationPerformanceChart reels={filteredReels} />
+              
+              <ThemePerformanceChart reels={filteredReels} />
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <TaggedUsersChart reels={filteredReels} />
+                <SoundPerformanceChart reels={filteredReels} />
+              </div>
+              
+              <PostingTimeHeatmap reels={filteredReels} />
+              
+              <CreatorComparisonChart reels={filteredReels} />
             </TabsContent>
 
             <TabsContent value="personal" className="space-y-6">
               <PerformanceMetrics 
                 metrics={calculateMetrics(
                   userReels,
-                  getPreviousPeriodReels().filter(r => r.created_by_user_id === user?.id)
+                  getPreviousPeriodReels().filter(r => r.created_by_email === userEmail)
                 )} 
               />
               
               <TrendChart
                 data={prepareChartData(userReels)}
                 title="Your Engagement Trends"
-                description="Your likes and views over time"
+                description="Your likes, views, and comments over time"
                 dataKeys={[
                   { key: "likes", name: "Likes", color: "hsl(var(--chart-2))" },
                   { key: "views", name: "Views", color: "hsl(var(--chart-4))" },
+                  { key: "comments", name: "Comments", color: "hsl(var(--chart-3))" },
                 ]}
               />
 
-              <TrendChart
-                data={prepareChartData(userReels)}
+              <RevenueScatterChart
+                reels={userReels}
                 title="Your Revenue Trends"
-                description="Your payout trends over time"
-                dataKeys={[
-                  { key: "payout", name: "Payout ($)", color: "hsl(var(--chart-5))" },
-                ]}
+                description="Per video views vs payout relationship"
               />
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -290,6 +306,19 @@ const Analytics = () => {
                 <TopPerformers reels={userReels} title="Your Top by Views" metric="views" />
                 <TopPerformers reels={userReels} title="Your Top by Payout" metric="payout" />
               </div>
+
+              <EngagementScatterChart reels={userReels} title="Your Engagement vs Views" />
+              
+              <DurationPerformanceChart reels={userReels} title="Your Duration Performance" />
+              
+              <ThemePerformanceChart reels={userReels} title="Your Theme Performance" />
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <TaggedUsersChart reels={userReels} title="Your Tagged Users Impact" />
+                <SoundPerformanceChart reels={userReels} title="Your Sound Performance" />
+              </div>
+              
+              <PostingTimeHeatmap reels={userReels} title="Your Posting Time Heatmap" />
             </TabsContent>
           </Tabs>
         </div>

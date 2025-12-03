@@ -8,8 +8,9 @@ interface Reel {
   ownerusername: string | null;
   caption: string | null;
   likescount: number | null;
-  videoviewcount: number | null;
-  payout: number | null;
+  videoplaycount: number | null;
+  videoviewcount?: number | null; // Keep for database compatibility, but use videoplaycount for display
+  payout: number | string | null; // Can be number or string from database
   permalink: string | null;
 }
 
@@ -22,8 +23,8 @@ interface TopPerformersProps {
 const TopPerformers = ({ reels, title, metric }: TopPerformersProps) => {
   const sortedReels = [...reels]
     .sort((a, b) => {
-      const aValue = metric === "likes" ? a.likescount : metric === "views" ? a.videoviewcount : a.payout;
-      const bValue = metric === "likes" ? b.likescount : metric === "views" ? b.videoviewcount : b.payout;
+      const aValue = metric === "likes" ? a.likescount : metric === "views" ? a.videoplaycount : a.payout;
+      const bValue = metric === "likes" ? b.likescount : metric === "views" ? b.videoplaycount : b.payout;
       return (bValue || 0) - (aValue || 0);
     })
     .slice(0, 5);
@@ -40,7 +41,7 @@ const TopPerformers = ({ reels, title, metric }: TopPerformersProps) => {
             const value = metric === "likes" 
               ? reel.likescount 
               : metric === "views" 
-                ? reel.videoviewcount 
+                ? reel.videoplaycount 
                 : reel.payout;
             
             return (
@@ -59,8 +60,8 @@ const TopPerformers = ({ reels, title, metric }: TopPerformersProps) => {
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="font-bold text-sm">
                     {metric === "payout" 
-                      ? `$${(value || 0).toFixed(2)}` 
-                      : (value || 0).toLocaleString()}
+                      ? `₹${(typeof value === 'number' ? value : parseFloat(String(value || '0'))).toFixed(2)}` 
+                      : (typeof value === 'number' ? value : parseFloat(String(value || '0'))).toLocaleString()}
                   </span>
                   {reel.permalink && (
                     <Button

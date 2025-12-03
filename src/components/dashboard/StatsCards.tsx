@@ -15,7 +15,7 @@ const StatsCards = ({ totalReels, totalLikes, totalComments, totalViews, totalPa
     { title: "Total Likes", value: totalLikes.toLocaleString(), icon: Heart, color: "text-chart-2" },
     { title: "Total Comments", value: totalComments.toLocaleString(), icon: MessageSquare, color: "text-chart-3" },
     { title: "Total Views", value: totalViews.toLocaleString(), icon: Eye, color: "text-chart-4" },
-    { title: "Total Payout", value: `$${totalPayout.toFixed(2)}`, icon: DollarSign, color: "text-chart-5" },
+    { title: "Total Payout", value: `₹${totalPayout.toFixed(2)}`, icon: DollarSign, color: "text-chart-5" },
   ];
 
   return (

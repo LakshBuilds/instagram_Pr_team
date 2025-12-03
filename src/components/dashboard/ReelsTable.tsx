@@ -9,9 +9,19 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Trash2, ExternalLink, Pencil, Check, X } from "lucide-react";
+import { Trash2, ExternalLink, Pencil, Check, X, Archive, RefreshCw, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { getApiProvider } from "@/lib/apiProvider";
+import { fetchFromInternalApi, transformInternalApiToReel } from "@/lib/internalApi";
 
 interface Reel {
   id: string;
@@ -19,11 +29,40 @@ interface Reel {
   caption: string | null;
   likescount: number | null;
   commentscount: number | null;
-  videoviewcount: number | null;
-  payout: number | null;
+  videoplaycount: number | null;
+  videoviewcount?: number | null;
+  payout: number | string | null;
   permalink: string | null;
   takenat: string | null;
+  is_archived?: boolean | null;
+  locationname?: string | null;
+  language?: string | null;
+  url?: string | null;
+  inputurl?: string | null;
+  shortcode?: string | null;
 }
+
+const LANGUAGES = [
+  "Hinglish",
+  "Hindi",
+  "Bengali",
+  "Marathi",
+  "Telugu",
+  "Tamil",
+  "Gujarati",
+  "Urdu",
+  "Kannada",
+  "Odia",
+  "Malayalam",
+  "Punjabi",
+  "Assamese",
+  "Maithili",
+  "Konkani",
+  "Sindhi",
+  "Kashmiri",
+  "Dogri",
+  "Manipuri (Meiteilon)",
+];
 
 interface ReelsTableProps {
   reels: Reel[];
@@ -33,6 +72,16 @@ interface ReelsTableProps {
 const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<number>(0);
+  const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
+  const [editLocationValue, setEditLocationValue] = useState<string>("");
+  const [editingLanguageId, setEditingLanguageId] = useState<string | null>(null);
+  const [editLanguageValue, setEditLanguageValue] = useState<string>("Hinglish");
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
+
+  // Deduplicate reels by id to avoid showing duplicates
+  const uniqueReels = reels.filter((reel, index, self) => 
+    index === self.findIndex(r => r.id === reel.id)
+  );
 
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from("reels").delete().eq("id", id);
@@ -41,6 +90,102 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
     } else {
       toast.success("Reel deleted successfully");
       onUpdate();
+    }
+  };
+
+  const handleRefreshReel = async (reel: Reel) => {
+    const url = reel.permalink || reel.url || reel.inputurl;
+    if (!url) {
+      toast.error("No URL available for this reel");
+      return;
+    }
+
+    setRefreshingId(reel.id);
+    const provider = getApiProvider();
+
+    try {
+      if (provider === 'internal') {
+        // Use internal API
+        const response = await fetchFromInternalApi(url, 5); // Priority 5 for manual refresh
+        const transformed = transformInternalApiToReel(response, url);
+        
+        // Build update object with all available fields
+        const updateData: any = {
+          videoplaycount: transformed.videoplaycount,
+          likescount: transformed.likescount,
+          commentscount: transformed.commentscount,
+          lastupdatedat: new Date().toISOString(),
+        };
+        
+        // Add video_duration if available
+        if (transformed.video_duration) {
+          updateData.video_duration = transformed.video_duration;
+        }
+        
+        // Add takenat (date of posting) if available and not already set
+        if (transformed.takenat && !reel.takenat) {
+          updateData.takenat = transformed.takenat;
+        }
+        
+        const { error } = await supabase
+          .from("reels")
+          .update(updateData)
+          .eq("id", reel.id);
+
+        if (error) {
+          throw error;
+        }
+        
+        toast.success(`Refreshed ${reel.shortcode || reel.ownerusername || 'reel'}`);
+      } else {
+        // Use Apify external API
+        const APIFY_API_URL = "https://api.apify.com/v2/acts/apify~instagram-reel-scraper/run-sync-get-dataset-items";
+        const APIFY_TOKEN = import.meta.env.VITE_APIFY_TOKEN || "";
+        
+        const response = await fetch(`${APIFY_API_URL}?token=${APIFY_TOKEN}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            directUrls: [url],
+            resultsLimit: 1,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Apify API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        if (data && data.length > 0) {
+          const reelData = data[0];
+          
+          const { error } = await supabase
+            .from("reels")
+            .update({
+              videoplaycount: reelData.videoPlayCount || reelData.playCount || 0,
+              likescount: reelData.likesCount || 0,
+              commentscount: reelData.commentsCount || 0,
+              lastupdatedat: new Date().toISOString(),
+            })
+            .eq("id", reel.id);
+
+          if (error) {
+            throw error;
+          }
+          
+          toast.success(`Refreshed ${reel.shortcode || reel.ownerusername || 'reel'}`);
+        } else {
+          toast.warning("No data returned from API");
+        }
+      }
+      
+      onUpdate();
+    } catch (error) {
+      console.error("Error refreshing reel:", error);
+      toast.error(`Failed to refresh reel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setRefreshingId(null);
     }
   };
 
@@ -64,13 +209,56 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
     }
   };
 
+  const handleEditLocation = (id: string, currentLocation: string | null) => {
+    setEditingLocationId(id);
+    setEditLocationValue(currentLocation || "");
+  };
+
+  const handleSaveLocation = async (id: string) => {
+    const { error } = await supabase
+      .from("reels")
+      .update({ locationname: editLocationValue || null })
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Failed to update location");
+    } else {
+      toast.success("Location updated successfully");
+      setEditingLocationId(null);
+      onUpdate();
+    }
+  };
+
+  const handleEditLanguage = (id: string, currentLanguage: string | null) => {
+    setEditingLanguageId(id);
+    setEditLanguageValue(currentLanguage || "Hinglish");
+  };
+
+  const handleSaveLanguage = async (id: string) => {
+    const { error } = await supabase
+      .from("reels")
+      .update({ language: editLanguageValue || "Hinglish" })
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Failed to update language");
+    } else {
+      toast.success("Language updated successfully");
+      setEditingLanguageId(null);
+      onUpdate();
+    }
+  };
+
   return (
     <div className="rounded-lg border bg-card">
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead>Status</TableHead>
             <TableHead>Username</TableHead>
             <TableHead>Caption</TableHead>
+            <TableHead>Location</TableHead>
+            <TableHead>Language</TableHead>
             <TableHead className="text-right">Likes</TableHead>
             <TableHead className="text-right">Comments</TableHead>
             <TableHead className="text-right">Views</TableHead>
@@ -80,22 +268,126 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {reels.length === 0 ? (
+          {uniqueReels.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+              <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                 No reels found
               </TableCell>
             </TableRow>
           ) : (
-            reels.map((reel) => (
-              <TableRow key={reel.id}>
+            uniqueReels.map((reel) => (
+              <TableRow 
+                key={reel.id}
+                className={reel.is_archived ? "opacity-60 bg-muted/30" : ""}
+              >
+                <TableCell>
+                  {reel.is_archived ? (
+                    <Badge variant="secondary" className="flex items-center gap-1 w-fit">
+                      <Archive className="h-3 w-3" />
+                      Archived
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-green-600 border-green-600">
+                      Active
+                    </Badge>
+                  )}
+                </TableCell>
                 <TableCell className="font-medium">{reel.ownerusername || "-"}</TableCell>
                 <TableCell className="max-w-xs truncate">
                   {reel.caption || "-"}
                 </TableCell>
+                <TableCell>
+                  {editingLocationId === reel.id ? (
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="text"
+                        value={editLocationValue}
+                        onChange={(e) => setEditLocationValue(e.target.value)}
+                        className="w-32 h-8"
+                        placeholder="Location"
+                      />
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        onClick={() => handleSaveLocation(reel.id)}
+                      >
+                        <Check className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        onClick={() => setEditingLocationId(null)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="max-w-xs truncate">{reel.locationname || "-"}</span>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        onClick={() => handleEditLocation(reel.id, reel.locationname || null)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {editingLanguageId === reel.id ? (
+                    <div className="flex items-center gap-1">
+                      <Select value={editLanguageValue} onValueChange={setEditLanguageValue}>
+                        <SelectTrigger className="w-40 h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {LANGUAGES.map((lang) => (
+                            <SelectItem key={lang} value={lang}>
+                              {lang}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        onClick={() => handleSaveLanguage(reel.id)}
+                      >
+                        <Check className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        onClick={() => setEditingLanguageId(null)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs">
+                        {reel.language || "Hinglish"}
+                      </Badge>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8"
+                        onClick={() => handleEditLanguage(reel.id, reel.language || null)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </TableCell>
                 <TableCell className="text-right">{reel.likescount?.toLocaleString() || 0}</TableCell>
                 <TableCell className="text-right">{reel.commentscount?.toLocaleString() || 0}</TableCell>
-                <TableCell className="text-right">{reel.videoviewcount?.toLocaleString() || 0}</TableCell>
+                <TableCell className="text-right">{reel.videoplaycount?.toLocaleString() || 0}</TableCell>
                 <TableCell className="text-right">
                   {editingId === reel.id ? (
                     <div className="flex items-center justify-end gap-1">
@@ -125,12 +417,12 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                     </div>
                   ) : (
                     <div className="flex items-center justify-end gap-2">
-                      <span>${reel.payout?.toFixed(2) || "0.00"}</span>
+                      <span>₹{typeof reel.payout === 'number' ? reel.payout.toFixed(2) : parseFloat(String(reel.payout || '0')).toFixed(2)}</span>
                       <Button
                         size="icon"
                         variant="ghost"
                         className="h-8 w-8"
-                        onClick={() => handleEditPayout(reel.id, reel.payout || 0)}
+                        onClick={() => handleEditPayout(reel.id, typeof reel.payout === 'number' ? reel.payout : parseFloat(String(reel.payout || '0')))}
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -141,13 +433,28 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                   {reel.takenat ? new Date(reel.takenat).toLocaleDateString() : "-"}
                 </TableCell>
                 <TableCell className="text-right">
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                      onClick={() => handleRefreshReel(reel)}
+                      disabled={refreshingId === reel.id}
+                      title="Refresh reel data"
+                    >
+                      {refreshingId === reel.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4" />
+                      )}
+                    </Button>
                     {reel.permalink && (
                       <Button
                         size="icon"
                         variant="ghost"
                         className="h-8 w-8"
                         onClick={() => window.open(reel.permalink!, "_blank")}
+                        title="Open in Instagram"
                       >
                         <ExternalLink className="h-4 w-4" />
                       </Button>
@@ -157,6 +464,7 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                       variant="ghost"
                       className="h-8 w-8 text-destructive hover:text-destructive"
                       onClick={() => handleDelete(reel.id)}
+                      title="Delete reel"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
