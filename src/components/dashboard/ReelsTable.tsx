@@ -299,15 +299,17 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
           lastupdatedat: new Date().toISOString(),
         };
         
-        // Only update counts if we got valid values (greater than 0)
-        // This prevents overwriting existing data with 0 from API failures
-        if (transformed.videoplaycount > 0) {
-          updateData.videoplaycount = transformed.videoplaycount;
+        // Update views only if > 0 (to protect against API failures)
+        const viewCount = transformed.videoplaycount || transformed.videoviewcount;
+        if (viewCount > 0) {
+          updateData.videoplaycount = viewCount;
+          updateData.videoviewcount = viewCount;
         }
-        if (transformed.likescount > 0) {
+        // Update likes and comments if defined (including 0, which is valid)
+        if (typeof transformed.likescount === 'number') {
           updateData.likescount = transformed.likescount;
         }
-        if (transformed.commentscount > 0) {
+        if (typeof transformed.commentscount === 'number') {
           updateData.commentscount = transformed.commentscount;
         }
         

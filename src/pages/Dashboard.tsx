@@ -267,20 +267,29 @@ const Dashboard = () => {
           refresh_failed: false, // Mark as successful
         };
         
-        // Only update counts if we got valid values (greater than 0)
-        if (transformed.videoplaycount > 0) {
-          updateData.videoplaycount = transformed.videoplaycount;
+        // Update counts - views only if > 0 (to protect against API failures)
+        // But likes/comments can be 0 (valid value), so update if defined
+        const viewCount = transformed.videoplaycount || transformed.videoviewcount;
+        if (viewCount > 0) {
+          updateData.videoplaycount = viewCount;
+          updateData.videoviewcount = viewCount;
         }
-        if (transformed.likescount > 0) {
+        // Update likes and comments if they're defined (including 0, which is valid)
+        if (typeof transformed.likescount === 'number') {
           updateData.likescount = transformed.likescount;
         }
-        if (transformed.commentscount > 0) {
+        if (typeof transformed.commentscount === 'number') {
           updateData.commentscount = transformed.commentscount;
         }
         
         // Add takenat (date of posting) if available and not already set
         if (transformed.takenat && !reel.takenat) {
           updateData.takenat = transformed.takenat;
+        }
+        
+        // Update video_duration if available
+        if (transformed.video_duration) {
+          updateData.video_duration = transformed.video_duration;
         }
         
         // Update the reel in database
@@ -401,14 +410,26 @@ const Dashboard = () => {
             const response = await fetchFromInternalApi(url, 0);
             const transformed = transformInternalApiToReel(response, url);
             
-            // Build update object - only include counts if they are valid (> 0)
+            // Build update object
             const updateData: any = {
               lastupdatedat: new Date().toISOString(),
               refresh_failed: false,
             };
-            if (transformed.videoplaycount > 0) updateData.videoplaycount = transformed.videoplaycount;
-            if (transformed.likescount > 0) updateData.likescount = transformed.likescount;
-            if (transformed.commentscount > 0) updateData.commentscount = transformed.commentscount;
+            // Update views only if > 0 (to protect against API failures)
+            const viewCount = transformed.videoplaycount || transformed.videoviewcount;
+            if (viewCount > 0) {
+              updateData.videoplaycount = viewCount;
+              updateData.videoviewcount = viewCount;
+            }
+            // Update likes and comments if defined (including 0, which is valid)
+            if (typeof transformed.likescount === 'number') {
+              updateData.likescount = transformed.likescount;
+            }
+            if (typeof transformed.commentscount === 'number') {
+              updateData.commentscount = transformed.commentscount;
+            }
+            if (transformed.video_duration) updateData.video_duration = transformed.video_duration;
+            if (transformed.takenat && !reel.takenat) updateData.takenat = transformed.takenat;
             
             const { error: updateError } = await supabase
               .from("reels")

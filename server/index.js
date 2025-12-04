@@ -1,7 +1,10 @@
 // Express server for Apify API calls (server-side)
 // This avoids CORS and bot detection issues
 
-import 'dotenv/config'; // Load .env file
+import dotenv from 'dotenv';
+// Load .env file - dotenv will auto-detect .env in project root
+dotenv.config();
+console.log('🔍 INTERNAL_API_URL:', process.env.INTERNAL_API_URL || 'NOT SET');
 import express from 'express';
 import cors from 'cors';
 import { fetchReelFromApify, fetchReelsFromApify } from './api/apify.js';

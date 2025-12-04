@@ -106,6 +106,7 @@ async function processQueue() {
   }
 
   rateLimitState.processing = true;
+  console.log(`🚀 Processing queue (${rateLimitState.queue.length} requests)`);
 
   while (rateLimitState.queue.length > 0) {
     if (!canMakeRequest()) {
@@ -121,6 +122,10 @@ async function processQueue() {
     
     if (!item) break;
 
+    cleanupRateLimitState();
+    const currentCount = rateLimitState.requests.length;
+    console.log(`🔄 Processing request ${currentCount + 1}/${RATE_LIMIT} (${rateLimitState.queue.length} remaining in queue)`);
+
     try {
       const data = await fetchFromInternalApiDirect(item.url);
       item.resolve(data);
@@ -129,6 +134,8 @@ async function processQueue() {
     }
 
     if (rateLimitState.queue.length > 0) {
+      const delaySeconds = Math.ceil(REQUEST_DELAY_MS / 1000);
+      console.log(`⏸️  Rate limiting: Waiting ${delaySeconds}s before next request (${rateLimitState.queue.length} in queue)`);
       await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY_MS));
     }
   }
@@ -176,12 +183,18 @@ export async function fetchFromInternalApi(
   priority: number = 0
 ): Promise<InternalApiResponse> {
   return new Promise((resolve, reject) => {
+    cleanupRateLimitState();
+    const currentRequests = rateLimitState.requests.length;
+    const queueLength = rateLimitState.queue.length;
+    
     rateLimitState.queue.push({
       url: instagramUrl,
       priority,
       resolve,
       reject,
     });
+    
+    console.log(`📥 Queued request (Priority: ${priority}) | Active: ${currentRequests}/${RATE_LIMIT} | Queue: ${queueLength + 1}`);
     processQueue();
   });
 }
