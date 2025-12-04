@@ -106,7 +106,7 @@ app.post('/api/apify/reels', async (req, res) => {
 });
 
 // Internal API proxy - to avoid CORS issues
-const INTERNAL_API_URL = process.env.INTERNAL_API_URL || 'https://emerald-prostores-crafts-history.trycloudflare.com'
+const INTERNAL_API_URL = process.env.INTERNAL_API_URL || 'https://joy-examination-springfield-compound.trycloudflare.com'
 
 app.post('/api/internal/scrape', async (req, res) => {
   try {

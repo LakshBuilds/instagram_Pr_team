@@ -1,7 +1,7 @@
 // Internal API service for fetching Instagram data
 // This uses your custom scraper API instead of Apify
 
-const INTERNAL_API_URL = import.meta.env.VITE_INTERNAL_API_URL || "https://emerald-prostores-crafts-history.trycloudflare.com";
+const INTERNAL_API_URL = import.meta.env.VITE_INTERNAL_API_URL || "https://joy-examination-springfield-compound.trycloudflare.com";
 
 // Rate limiting configuration
 const RATE_LIMIT = 20; // requests per window
