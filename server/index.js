@@ -1,6 +1,7 @@
 // Express server for Apify API calls (server-side)
 // This avoids CORS and bot detection issues
 
+import 'dotenv/config'; // Load .env file
 import express from 'express';
 import cors from 'cors';
 import { fetchReelFromApify, fetchReelsFromApify } from './api/apify.js';
@@ -106,7 +107,14 @@ app.post('/api/apify/reels', async (req, res) => {
 });
 
 // Internal API proxy - to avoid CORS issues
-const INTERNAL_API_URL = process.env.INTERNAL_API_URL || 'https://joy-examination-springfield-compound.trycloudflare.com'
+const INTERNAL_API_URL = process.env.INTERNAL_API_URL;
+
+if (!INTERNAL_API_URL) {
+  console.error('❌ INTERNAL_API_URL not set in .env file!');
+  console.error('   Please add: INTERNAL_API_URL=https://your-cloudflare-url.trycloudflare.com');
+} else {
+  console.log('✅ Internal API URL:', INTERNAL_API_URL);
+}
 
 app.post('/api/internal/scrape', async (req, res) => {
   try {
