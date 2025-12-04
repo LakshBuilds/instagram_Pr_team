@@ -118,7 +118,7 @@ export interface TransformedReel {
   url: string;
   permalink: string;
   inputurl: string;
-  is_archived: boolean;
+  // is_archived field removed - not in database schema
   language?: string;
   // New Instagram API fields
   is_post_live_clips_media?: boolean;
@@ -541,7 +541,7 @@ export const transformApifyToReel = (post: ApifyInstagramPost): TransformedReel 
     url: cleanUrl,
     permalink: cleanPermalink,
     inputurl: cleanInputUrl,
-    is_archived: isArchived,
+    // is_archived field removed - not in database schema
     // language field removed - not in database schema
     // New Instagram API fields
     is_post_live_clips_media: post.is_post_live_clips_media || false,
@@ -721,9 +721,6 @@ export const saveReelsToSupabase = async (
         } else {
           success++;
           console.log(`✅ Updated reel: ${identifier}`);
-          if (reel.is_archived) {
-            console.log(`Marked reel as archived: ${identifier}`);
-          }
         }
       } else {
         // Insert new reel (including archived status)
@@ -743,9 +740,7 @@ export const saveReelsToSupabase = async (
           errorDetails.push(errorMsg);
         } else {
           success++;
-          if (reel.is_archived) {
-            console.log(`Inserted archived reel: ${identifier}`);
-          }
+          console.log(`✅ Inserted reel: ${identifier}`);
         }
       }
     } catch (error: any) {

@@ -256,7 +256,7 @@ export function transformInternalApiToReel(data: InternalApiResponse, inputUrl: 
     url: `https://www.instagram.com/p/${apiData.shortcode}/`,
     permalink: `https://www.instagram.com/p/${apiData.shortcode}/`,
     inputurl: inputUrl,
-    is_archived: false,
+    // is_archived field removed - not in database schema
   };
 }
 
