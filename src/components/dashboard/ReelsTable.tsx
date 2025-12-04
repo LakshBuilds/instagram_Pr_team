@@ -534,33 +534,58 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                   </TableCell>
                   <TableCell>{reel.takenat ? new Date(reel.takenat).toLocaleDateString() : "-"}</TableCell>
                   <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                        onClick={() => handleRefreshReel(reel, rowKey)}
-                        disabled={refreshingRowKey === rowKey}
-                        title="Refresh reel data"
-                      >
-                        {refreshingRowKey === rowKey ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                      </Button>
-                      {reel.permalink && (
-                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => window.open(reel.permalink!, "_blank")} title="Open in Instagram">
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
-                      )}
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-red-50"
-                        onClick={() => handleDelete(reel.id, reel.shortcode || undefined)}
-                        disabled={isDeleting}
-                        title={`Delete reel (Shortcode: ${reel.shortcode || 'N/A'})`}
-                      >
-                        {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                      </Button>
-                    </div>
+                    {(() => {
+                      // Prefer explicit permalink, but fall back to url/inputurl or build from shortcode
+                      const permalink =
+                        reel.permalink ||
+                        reel.url ||
+                        reel.inputurl ||
+                        (reel.shortcode ? `https://www.instagram.com/p/${reel.shortcode}/` : null);
+
+                      return (
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            onClick={() => handleRefreshReel(reel, rowKey)}
+                            disabled={refreshingRowKey === rowKey}
+                            title="Refresh reel data"
+                          >
+                            {refreshingRowKey === rowKey ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <RefreshCw className="h-4 w-4" />
+                            )}
+                          </Button>
+                          {permalink && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              onClick={() => window.open(permalink, "_blank")}
+                              title="Open in Instagram"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </Button>
+                          )}
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-8 w-8 text-destructive hover:text-destructive hover:bg-red-50"
+                            onClick={() => handleDelete(reel.id, reel.shortcode || undefined)}
+                            disabled={isDeleting}
+                            title={`Delete reel (Shortcode: ${reel.shortcode || 'N/A'})`}
+                          >
+                            {isDeleting ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                      );
+                    })()}
                   </TableCell>
                 </TableRow>
               );
