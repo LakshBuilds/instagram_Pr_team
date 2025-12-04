@@ -63,7 +63,11 @@ const CreatorComparisonChart = ({
     
     creatorStats[creatorKey].views += reel.videoplaycount || reel.videoviewcount || 0;
     creatorStats[creatorKey].likes += reel.likescount || 0;
-    creatorStats[creatorKey].comments += reel.commentscount || 0;
+    // Handle commentscount as potentially string (like Dashboard does)
+    const comments = typeof reel.commentscount === 'string' 
+      ? parseInt(reel.commentscount || '0', 10) 
+      : (reel.commentscount || 0);
+    creatorStats[creatorKey].comments += comments;
     creatorStats[creatorKey].payout += parseFloat(String(reel.payout)) || 0;
     creatorStats[creatorKey].count += 1;
   });
