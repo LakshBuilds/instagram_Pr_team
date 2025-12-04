@@ -212,6 +212,15 @@ export function transformInternalApiToReel(data: InternalApiResponse, inputUrl: 
   console.log(`📅 Date of posting (takenat): ${takenAt} from timestamp: ${apiData.timestamp}`);
   console.log(`⏱️ Video duration: ${videoDuration}s`);
   
+  // Get the best available view count (prioritize play_count, then video_view_count, then view_count)
+  const viewCount = apiData.engagement.play_count || 
+                    apiData.engagement.video_view_count || 
+                    apiData.engagement.view_count || 
+                    apiData.engagement.organic_video_view_count || 
+                    0;
+  
+  console.log(`👀 Views: play_count=${apiData.engagement.play_count}, video_view_count=${apiData.engagement.video_view_count}, view_count=${apiData.engagement.view_count}, using=${viewCount}`);
+  
   const resolvedId = `shortcode_${apiData.shortcode}`;
   
   return {
@@ -223,8 +232,8 @@ export function transformInternalApiToReel(data: InternalApiResponse, inputUrl: 
     caption: apiData.caption || "",
     likescount: apiData.engagement.like_count,
     commentscount: apiData.engagement.comment_count,
-    videoviewcount: apiData.engagement.play_count,
-    videoplaycount: apiData.engagement.play_count,
+    videoviewcount: viewCount,
+    videoplaycount: viewCount,
     timestamp: takenAt,
     takenat: takenAt,
     video_duration: videoDuration,

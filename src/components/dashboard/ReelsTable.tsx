@@ -296,11 +296,20 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
         const transformed = transformInternalApiToReel(response, url);
         
         const updateData: any = {
-          videoplaycount: transformed.videoplaycount,
-          likescount: transformed.likescount,
-          commentscount: transformed.commentscount,
           lastupdatedat: new Date().toISOString(),
         };
+        
+        // Only update counts if we got valid values (greater than 0)
+        // This prevents overwriting existing data with 0 from API failures
+        if (transformed.videoplaycount > 0) {
+          updateData.videoplaycount = transformed.videoplaycount;
+        }
+        if (transformed.likescount > 0) {
+          updateData.likescount = transformed.likescount;
+        }
+        if (transformed.commentscount > 0) {
+          updateData.commentscount = transformed.commentscount;
+        }
         
         if (transformed.video_duration) updateData.video_duration = transformed.video_duration;
         if (transformed.takenat && !reel.takenat) updateData.takenat = transformed.takenat;
