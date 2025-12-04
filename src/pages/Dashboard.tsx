@@ -139,11 +139,14 @@ const Dashboard = () => {
       console.log("✅ Team reels found:", teamReels?.length || 0);
       
       if (userReels && userReels.length > 0) {
-        console.log("📋 Sample user reels:", userReels.slice(0, 2).map(r => ({
-          id: r.id,
-          email: r.created_by_email,
-          caption: r.caption?.substring(0, 50)
-        })));
+        const sample = userReels.slice(0, 3).map(r => ({
+          shortcode: r.shortcode,
+          likes: r.likescount,
+          comments: r.commentscount,
+          videoplaycount: r.videoplaycount,
+          videoviewcount: r.videoviewcount,
+        }));
+        console.log("📋 Sample user reels:", JSON.stringify(sample));
       }
       
       if (teamReels && teamReels.length > 0) {

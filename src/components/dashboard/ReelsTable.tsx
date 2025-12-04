@@ -509,7 +509,7 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                   </TableCell>
                   <TableCell className="text-right">{reel.likescount?.toLocaleString() || 0}</TableCell>
                   <TableCell className="text-right">{reel.commentscount?.toLocaleString() || 0}</TableCell>
-                  <TableCell className="text-right">{reel.videoplaycount?.toLocaleString() || 0}</TableCell>
+                  <TableCell className="text-right">{(reel.videoplaycount || reel.videoviewcount)?.toLocaleString() || 0}</TableCell>
                   <TableCell className="text-right">
                     {editingRowKey === rowKey ? (
                       <div className="flex items-center justify-end gap-1">
