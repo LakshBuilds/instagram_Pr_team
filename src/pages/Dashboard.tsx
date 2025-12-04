@@ -257,14 +257,23 @@ const Dashboard = () => {
         const response = await fetchFromInternalApi(url, 0); // Priority 0 for refresh
         const transformed = transformInternalApiToReel(response, url);
         
-        // Build update object with all available fields
+        // Build update object - only include counts if they are valid (> 0)
+        // This prevents overwriting existing data with 0 from API failures
         const updateData: any = {
-          videoplaycount: transformed.videoplaycount,
-          likescount: transformed.likescount,
-          commentscount: transformed.commentscount,
           lastupdatedat: new Date().toISOString(),
           refresh_failed: false, // Mark as successful
         };
+        
+        // Only update counts if we got valid values (greater than 0)
+        if (transformed.videoplaycount > 0) {
+          updateData.videoplaycount = transformed.videoplaycount;
+        }
+        if (transformed.likescount > 0) {
+          updateData.likescount = transformed.likescount;
+        }
+        if (transformed.commentscount > 0) {
+          updateData.commentscount = transformed.commentscount;
+        }
         
         // Add takenat (date of posting) if available and not already set
         if (transformed.takenat && !reel.takenat) {
@@ -389,15 +398,18 @@ const Dashboard = () => {
             const response = await fetchFromInternalApi(url, 0);
             const transformed = transformInternalApiToReel(response, url);
             
+            // Build update object - only include counts if they are valid (> 0)
+            const updateData: any = {
+              lastupdatedat: new Date().toISOString(),
+              refresh_failed: false,
+            };
+            if (transformed.videoplaycount > 0) updateData.videoplaycount = transformed.videoplaycount;
+            if (transformed.likescount > 0) updateData.likescount = transformed.likescount;
+            if (transformed.commentscount > 0) updateData.commentscount = transformed.commentscount;
+            
             const { error: updateError } = await supabase
               .from("reels")
-              .update({
-                videoplaycount: transformed.videoplaycount,
-                likescount: transformed.likescount,
-                commentscount: transformed.commentscount,
-                lastupdatedat: new Date().toISOString(),
-                refresh_failed: false,
-              } as any)
+              .update(updateData)
               .eq("id", reel.id);
             
             if (updateError) {
