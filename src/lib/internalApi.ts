@@ -1,7 +1,6 @@
 // Internal API service for fetching Instagram data
 // This uses your custom scraper API instead of Apify
-
-const INTERNAL_API_URL = import.meta.env.VITE_INTERNAL_API_URL || "https://joy-examination-springfield-compound.trycloudflare.com";
+// Note: The frontend calls the proxy server at localhost:3001, which then proxies to the Internal API
 
 // Rate limiting configuration
 const RATE_LIMIT = 20; // requests per window
