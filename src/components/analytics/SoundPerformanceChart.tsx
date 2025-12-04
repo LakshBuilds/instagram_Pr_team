@@ -49,7 +49,7 @@ const SoundPerformanceChart = ({
         };
       }
       
-      soundStats[soundKey].views += reel.videoplaycount || 0;
+      soundStats[soundKey].views += reel.videoplaycount || reel.videoviewcount || 0;
       soundStats[soundKey].likes += reel.likescount || 0;
       soundStats[soundKey].comments += reel.commentscount || 0;
       soundStats[soundKey].count += 1;

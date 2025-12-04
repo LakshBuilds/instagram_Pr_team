@@ -37,7 +37,7 @@ const PostingTimeHeatmap = ({
         heatmapData[key] = { views: 0, likes: 0, count: 0 };
       }
       
-      heatmapData[key].views += reel.videoplaycount || 0;
+      heatmapData[key].views += reel.videoplaycount || reel.videoviewcount || 0;
       heatmapData[key].likes += reel.likescount || 0;
       heatmapData[key].count += 1;
     });

@@ -38,7 +38,7 @@ const DurationPerformanceChart = ({
         durationBuckets[bucket] = { views: 0, likes: 0, comments: 0, count: 0 };
       }
       
-      durationBuckets[bucket].views += reel.videoplaycount || 0;
+      durationBuckets[bucket].views += reel.videoplaycount || reel.videoviewcount || 0;
       durationBuckets[bucket].likes += reel.likescount || 0;
       durationBuckets[bucket].comments += reel.commentscount || 0;
       durationBuckets[bucket].count += 1;

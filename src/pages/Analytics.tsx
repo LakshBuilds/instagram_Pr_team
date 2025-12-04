@@ -115,7 +115,7 @@ const Analytics = () => {
       
       dataMap.set(date, {
         likes: existing.likes + (reel.likescount || 0),
-        views: existing.views + (reel.videoplaycount || 0),
+        views: existing.views + (reel.videoplaycount || reel.videoviewcount || 0),
         comments: existing.comments + (reel.commentscount || 0),
         payout: existing.payout + payoutValue,
         count: existing.count + 1,
@@ -130,7 +130,7 @@ const Analytics = () => {
   const calculateMetrics = (current: Reel[], previous: Reel[]) => {
     const currentStats = {
       likes: current.reduce((sum, r) => sum + (r.likescount || 0), 0),
-      views: current.reduce((sum, r) => sum + (r.videoplaycount || 0), 0),
+      views: current.reduce((sum, r) => sum + (r.videoplaycount || r.videoviewcount || 0), 0),
       payout: current.reduce((sum, r) => {
         const payoutValue = typeof r.payout === 'number' ? r.payout : parseFloat(String(r.payout || '0'));
         return sum + payoutValue;
@@ -140,7 +140,7 @@ const Analytics = () => {
 
     const previousStats = {
       likes: previous.reduce((sum, r) => sum + (r.likescount || 0), 0),
-      views: previous.reduce((sum, r) => sum + (r.videoplaycount || 0), 0),
+      views: previous.reduce((sum, r) => sum + (r.videoplaycount || r.videoviewcount || 0), 0),
       payout: previous.reduce((sum, r) => {
         const payoutValue = typeof r.payout === 'number' ? r.payout : parseFloat(String(r.payout || '0'));
         return sum + payoutValue;

@@ -246,7 +246,7 @@ const LocationMap = ({ reels, selectedLanguage, selectedLocation }: LocationMapP
 
   const totalReels = Object.values(locationData).reduce((sum, reels) => sum + reels.length, 0);
   const totalViews = Object.values(locationData).reduce((sum, reels) => 
-    sum + reels.reduce((s, r) => s + (r.videoplaycount || 0), 0), 0
+    sum + reels.reduce((s, r) => s + (r.videoplaycount || r.videoviewcount || 0), 0), 0
   );
 
   if (!mapboxToken) {
@@ -283,7 +283,7 @@ const LocationMap = ({ reels, selectedLanguage, selectedLocation }: LocationMapP
               const coords = getCoordinates(location);
               if (!coords) return null;
 
-              const totalViews = locationReels.reduce((sum, r) => sum + (r.videoplaycount || 0), 0);
+              const totalViews = locationReels.reduce((sum, r) => sum + (r.videoplaycount || r.videoviewcount || 0), 0);
               const totalLikes = locationReels.reduce((sum, r) => sum + (r.likescount || 0), 0);
               const totalComments = locationReels.reduce((sum, r) => sum + (r.commentscount || 0), 0);
 
@@ -327,7 +327,7 @@ const LocationMap = ({ reels, selectedLanguage, selectedLocation }: LocationMapP
                     <div className="flex items-center gap-4 mt-2">
                       <div className="flex items-center gap-1">
                         <Eye className="h-3 w-3" />
-                        <span>{locationData[selectedMarker].reduce((sum, r) => sum + (r.videoplaycount || 0), 0).toLocaleString()}</span>
+                        <span>{locationData[selectedMarker].reduce((sum, r) => sum + (r.videoplaycount || r.videoviewcount || 0), 0).toLocaleString()}</span>
                       </div>
                       <div className="flex items-center gap-1">
                         <Heart className="h-3 w-3" />

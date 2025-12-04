@@ -27,7 +27,7 @@ const TaggedUsersChart = ({
     const hasTags = reel.has_tagged_users || (reel.usertags && Object.keys(reel.usertags).length > 0);
     const stats = hasTags ? withTags : withoutTags;
     
-    stats.views += reel.videoplaycount || 0;
+    stats.views += reel.videoplaycount || reel.videoviewcount || 0;
     stats.likes += reel.likescount || 0;
     stats.comments += reel.commentscount || 0;
     stats.count += 1;

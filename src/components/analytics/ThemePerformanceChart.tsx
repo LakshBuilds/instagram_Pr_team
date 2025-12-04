@@ -58,7 +58,7 @@ const ThemePerformanceChart = ({
           themeStats[theme] = { views: 0, likes: 0, comments: 0, count: 0 };
         }
         
-        themeStats[theme].views += reel.videoplaycount || 0;
+        themeStats[theme].views += reel.videoplaycount || reel.videoviewcount || 0;
         themeStats[theme].likes += reel.likescount || 0;
         themeStats[theme].comments += reel.commentscount || 0;
         themeStats[theme].count += 1;

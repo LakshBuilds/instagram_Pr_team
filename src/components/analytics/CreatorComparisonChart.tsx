@@ -61,7 +61,7 @@ const CreatorComparisonChart = ({
       };
     }
     
-    creatorStats[creatorKey].views += reel.videoplaycount || 0;
+    creatorStats[creatorKey].views += reel.videoplaycount || reel.videoviewcount || 0;
     creatorStats[creatorKey].likes += reel.likescount || 0;
     creatorStats[creatorKey].comments += reel.commentscount || 0;
     creatorStats[creatorKey].payout += parseFloat(String(reel.payout)) || 0;

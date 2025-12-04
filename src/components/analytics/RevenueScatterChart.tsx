@@ -22,7 +22,7 @@ const RevenueScatterChart = ({
   const data = reels
     .filter(reel => reel.videoplaycount && reel.videoplaycount > 0 && reel.payout !== null && reel.payout !== undefined)
     .map(reel => {
-      const views = reel.videoplaycount || 0;
+      const views = reel.videoplaycount || reel.videoviewcount || 0;
       const payoutValue = typeof reel.payout === 'number' ? reel.payout : parseFloat(String(reel.payout || '0'));
       
       return {

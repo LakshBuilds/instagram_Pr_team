@@ -23,8 +23,8 @@ interface TopPerformersProps {
 const TopPerformers = ({ reels, title, metric }: TopPerformersProps) => {
   const sortedReels = [...reels]
     .sort((a, b) => {
-      const aValue = metric === "likes" ? a.likescount : metric === "views" ? a.videoplaycount : a.payout;
-      const bValue = metric === "likes" ? b.likescount : metric === "views" ? b.videoplaycount : b.payout;
+      const aValue = metric === "likes" ? a.likescount : metric === "views" ? (a.videoplaycount || a.videoviewcount) : a.payout;
+      const bValue = metric === "likes" ? b.likescount : metric === "views" ? (b.videoplaycount || b.videoviewcount) : b.payout;
       return (bValue || 0) - (aValue || 0);
     })
     .slice(0, 5);
@@ -41,7 +41,7 @@ const TopPerformers = ({ reels, title, metric }: TopPerformersProps) => {
             const value = metric === "likes" 
               ? reel.likescount 
               : metric === "views" 
-                ? reel.videoplaycount 
+                ? (reel.videoplaycount || reel.videoviewcount) 
                 : reel.payout;
             
             return (

@@ -188,7 +188,7 @@ const Dashboard = () => {
           : (reel.commentscount || 0);
         return sum + comments;
       }, 0),
-      totalViews: uniqueReels.reduce((sum, reel) => sum + (reel.videoplaycount || 0), 0),
+      totalViews: uniqueReels.reduce((sum, reel) => sum + (reel.videoplaycount || reel.videoviewcount || 0), 0),
       totalPayout: uniqueReels.reduce((sum, reel) => sum + (parseFloat(String(reel.payout)) || 0), 0),
     };
   };
