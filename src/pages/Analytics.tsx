@@ -17,7 +17,7 @@ import SoundPerformanceChart from "@/components/analytics/SoundPerformanceChart"
 import PostingTimeHeatmap from "@/components/analytics/PostingTimeHeatmap";
 import CreatorComparisonChart from "@/components/analytics/CreatorComparisonChart";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Heart, Eye, DollarSign, Video } from "lucide-react";
+import { Heart, Eye, DollarSign, Video, MessageSquare } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
 
 interface Reel {
@@ -113,10 +113,15 @@ const Analytics = () => {
       
       const payoutValue = typeof reel.payout === 'number' ? reel.payout : parseFloat(String(reel.payout || '0'));
       
+      // Handle commentscount as potentially string (like Dashboard does)
+      const comments = typeof reel.commentscount === 'string' 
+        ? parseInt(reel.commentscount || '0', 10) 
+        : (reel.commentscount || 0);
+      
       dataMap.set(date, {
         likes: existing.likes + (reel.likescount || 0),
         views: existing.views + (reel.videoplaycount || reel.videoviewcount || 0),
-        comments: existing.comments + (reel.commentscount || 0),
+        comments: existing.comments + comments,
         payout: existing.payout + payoutValue,
         count: existing.count + 1,
       });
@@ -131,6 +136,12 @@ const Analytics = () => {
     const currentStats = {
       likes: current.reduce((sum, r) => sum + (r.likescount || 0), 0),
       views: current.reduce((sum, r) => sum + (r.videoplaycount || r.videoviewcount || 0), 0),
+      comments: current.reduce((sum, r) => {
+        const comments = typeof r.commentscount === 'string' 
+          ? parseInt(r.commentscount || '0', 10) 
+          : (r.commentscount || 0);
+        return sum + comments;
+      }, 0),
       payout: current.reduce((sum, r) => {
         const payoutValue = typeof r.payout === 'number' ? r.payout : parseFloat(String(r.payout || '0'));
         return sum + payoutValue;
@@ -141,6 +152,12 @@ const Analytics = () => {
     const previousStats = {
       likes: previous.reduce((sum, r) => sum + (r.likescount || 0), 0),
       views: previous.reduce((sum, r) => sum + (r.videoplaycount || r.videoviewcount || 0), 0),
+      comments: previous.reduce((sum, r) => {
+        const comments = typeof r.commentscount === 'string' 
+          ? parseInt(r.commentscount || '0', 10) 
+          : (r.commentscount || 0);
+        return sum + comments;
+      }, 0),
       payout: previous.reduce((sum, r) => {
         const payoutValue = typeof r.payout === 'number' ? r.payout : parseFloat(String(r.payout || '0'));
         return sum + payoutValue;
@@ -165,6 +182,12 @@ const Analytics = () => {
         value: currentStats.views.toLocaleString(),
         change: calculateChange(currentStats.views, previousStats.views),
         icon: <Eye className="h-4 w-4 text-chart-4" />,
+      },
+      {
+        title: "Total Comments",
+        value: currentStats.comments.toLocaleString(),
+        change: calculateChange(currentStats.comments, previousStats.comments),
+        icon: <MessageSquare className="h-4 w-4 text-chart-3" />,
       },
       {
         title: "Total Payout",
