@@ -301,9 +301,19 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
         
         // Update views only if > 0 (to protect against API failures)
         const viewCount = transformed.videoplaycount || transformed.videoviewcount;
+        const likesCount = typeof transformed.likescount === 'number' ? transformed.likescount : 0;
+        const commentsCount = typeof transformed.commentscount === 'number' ? transformed.commentscount : 0;
+        
+        // Check if reel should be marked as archived (all counts are 0)
+        const shouldArchive = viewCount === 0 && likesCount === 0 && commentsCount === 0;
+        
         if (viewCount > 0) {
           updateData.videoplaycount = viewCount;
           updateData.videoviewcount = viewCount;
+        } else {
+          // If views are 0, update them (might be archived/deleted)
+          updateData.videoplaycount = 0;
+          updateData.videoviewcount = 0;
         }
         // Update likes and comments if defined (including 0, which is valid)
         if (typeof transformed.likescount === 'number') {
@@ -311,6 +321,11 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
         }
         if (typeof transformed.commentscount === 'number') {
           updateData.commentscount = transformed.commentscount;
+        }
+        
+        // Mark as archived by updating caption if all counts are 0
+        if (shouldArchive && reel.caption && !reel.caption.startsWith('[Archived]')) {
+          updateData.caption = `[Archived] ${reel.caption}`;
         }
         
         if (transformed.video_duration) updateData.video_duration = transformed.video_duration;
@@ -413,7 +428,11 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
         </Badge>
       );
     }
-    if (reel.is_archived) {
+    // Check if archived by caption prefix or if all counts are 0
+    const isArchived = reel.caption?.startsWith('[Archived]') || 
+                      (reel.videoplaycount === 0 && reel.videoviewcount === 0 && 
+                       reel.likescount === 0 && reel.commentscount === 0);
+    if (isArchived || reel.is_archived) {
       return (
         <Badge variant="secondary" className="flex items-center gap-1 w-fit">
           <Archive className="h-3 w-3" />
@@ -457,10 +476,15 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
             reels.map((reel, index) => {
               const rowKey = getRowKey(index);
               const isDeleting = deletingId === reel.id;
+              // Check if archived by caption prefix or if all counts are 0
+              const isArchived = reel.caption?.startsWith('[Archived]') || 
+                                (reel.videoplaycount === 0 && reel.videoviewcount === 0 && 
+                                 reel.likescount === 0 && reel.commentscount === 0) ||
+                                reel.is_archived;
               return (
                 <TableRow 
                   key={rowKey}
-                  className={`${reel.is_archived ? "opacity-60 bg-muted/30" : ""} ${isDuplicate(reel) ? "bg-red-50 dark:bg-red-950/20" : ""} ${isDeleting ? "opacity-50" : ""}`}
+                  className={`${isArchived ? "opacity-60 bg-muted/30" : ""} ${isDuplicate(reel) ? "bg-red-50 dark:bg-red-950/20" : ""} ${isDeleting ? "opacity-50" : ""}`}
                 >
                   <TableCell>{getStatusBadge(reel)}</TableCell>
                   <TableCell className="font-medium">{reel.ownerusername || "-"}</TableCell>

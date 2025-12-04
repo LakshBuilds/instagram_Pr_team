@@ -270,9 +270,19 @@ const Dashboard = () => {
         // Update counts - views only if > 0 (to protect against API failures)
         // But likes/comments can be 0 (valid value), so update if defined
         const viewCount = transformed.videoplaycount || transformed.videoviewcount;
+        const likesCount = typeof transformed.likescount === 'number' ? transformed.likescount : 0;
+        const commentsCount = typeof transformed.commentscount === 'number' ? transformed.commentscount : 0;
+        
+        // Check if reel should be marked as archived (all counts are 0)
+        const shouldArchive = viewCount === 0 && likesCount === 0 && commentsCount === 0;
+        
         if (viewCount > 0) {
           updateData.videoplaycount = viewCount;
           updateData.videoviewcount = viewCount;
+        } else {
+          // If views are 0, update them (might be archived/deleted)
+          updateData.videoplaycount = 0;
+          updateData.videoviewcount = 0;
         }
         // Update likes and comments if they're defined (including 0, which is valid)
         if (typeof transformed.likescount === 'number') {
@@ -280,6 +290,11 @@ const Dashboard = () => {
         }
         if (typeof transformed.commentscount === 'number') {
           updateData.commentscount = transformed.commentscount;
+        }
+        
+        // Mark as archived by updating caption if all counts are 0
+        if (shouldArchive && reel.caption && !reel.caption.startsWith('[Archived]')) {
+          updateData.caption = `[Archived] ${reel.caption}`;
         }
         
         // Add takenat (date of posting) if available and not already set
@@ -417,9 +432,19 @@ const Dashboard = () => {
             };
             // Update views only if > 0 (to protect against API failures)
             const viewCount = transformed.videoplaycount || transformed.videoviewcount;
+            const likesCount = typeof transformed.likescount === 'number' ? transformed.likescount : 0;
+            const commentsCount = typeof transformed.commentscount === 'number' ? transformed.commentscount : 0;
+            
+            // Check if reel should be marked as archived (all counts are 0)
+            const shouldArchive = viewCount === 0 && likesCount === 0 && commentsCount === 0;
+            
             if (viewCount > 0) {
               updateData.videoplaycount = viewCount;
               updateData.videoviewcount = viewCount;
+            } else {
+              // If views are 0, update them (might be archived/deleted)
+              updateData.videoplaycount = 0;
+              updateData.videoviewcount = 0;
             }
             // Update likes and comments if defined (including 0, which is valid)
             if (typeof transformed.likescount === 'number') {
@@ -428,6 +453,12 @@ const Dashboard = () => {
             if (typeof transformed.commentscount === 'number') {
               updateData.commentscount = transformed.commentscount;
             }
+            
+            // Mark as archived by updating caption if all counts are 0
+            if (shouldArchive && reel.caption && !reel.caption.startsWith('[Archived]')) {
+              updateData.caption = `[Archived] ${reel.caption}`;
+            }
+            
             if (transformed.video_duration) updateData.video_duration = transformed.video_duration;
             if (transformed.takenat && !reel.takenat) updateData.takenat = transformed.takenat;
             
