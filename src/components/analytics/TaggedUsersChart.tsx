@@ -29,7 +29,11 @@ const TaggedUsersChart = ({
     
     stats.views += reel.videoplaycount || reel.videoviewcount || 0;
     stats.likes += reel.likescount || 0;
-    stats.comments += reel.commentscount || 0;
+    // Handle commentscount as potentially string (like Dashboard does)
+    const comments = typeof reel.commentscount === 'string' 
+      ? parseInt(reel.commentscount || '0', 10) 
+      : (reel.commentscount || 0);
+    stats.comments += comments;
     stats.count += 1;
   });
 

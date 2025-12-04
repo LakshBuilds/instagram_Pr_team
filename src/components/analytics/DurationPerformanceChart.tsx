@@ -40,7 +40,11 @@ const DurationPerformanceChart = ({
       
       durationBuckets[bucket].views += reel.videoplaycount || reel.videoviewcount || 0;
       durationBuckets[bucket].likes += reel.likescount || 0;
-      durationBuckets[bucket].comments += reel.commentscount || 0;
+      // Handle commentscount as potentially string (like Dashboard does)
+      const comments = typeof reel.commentscount === 'string' 
+        ? parseInt(reel.commentscount || '0', 10) 
+        : (reel.commentscount || 0);
+      durationBuckets[bucket].comments += comments;
       durationBuckets[bucket].count += 1;
     });
 

@@ -60,7 +60,11 @@ const ThemePerformanceChart = ({
         
         themeStats[theme].views += reel.videoplaycount || reel.videoviewcount || 0;
         themeStats[theme].likes += reel.likescount || 0;
-        themeStats[theme].comments += reel.commentscount || 0;
+        // Handle commentscount as potentially string (like Dashboard does)
+        const comments = typeof reel.commentscount === 'string' 
+          ? parseInt(reel.commentscount || '0', 10) 
+          : (reel.commentscount || 0);
+        themeStats[theme].comments += comments;
         themeStats[theme].count += 1;
       });
     });
