@@ -144,7 +144,8 @@ const LocationMap = ({ reels, selectedLanguage, selectedLocation }: LocationMapP
 
   // Get Mapbox token from environment
   useEffect(() => {
-    const token = import.meta.env.VITE_MAPBOX_TOKEN || "pk.eyJ1IjoibWFwYm94IiwiYSI6ImNpejY4NXV4NTYyZ2gyM2x6bnE3N2ltb2QifQ.rJcFIG214AriISLbB6B5aw";
+    // Do NOT fall back to the public demo token – require a real token
+    const token = import.meta.env.VITE_MAPBOX_TOKEN || "";
     setMapboxToken(token);
   }, []);
 
