@@ -162,14 +162,25 @@ async function fetchFromInternalApiDirect(instagramUrl: string): Promise<Interna
       let errorMessage = `Internal API error: ${response.status} ${response.statusText}`;
       try {
         const errorData = await response.json();
+        console.error('❌ Server error response:', errorData);
         if (errorData.error) {
           errorMessage = errorData.error;
           if (errorData.details) {
             errorMessage += ` (${errorData.details})`;
           }
         }
-      } catch {
-        // If JSON parsing fails, use default message
+      } catch (parseError) {
+        // If JSON parsing fails, try to get text response
+        try {
+          const errorText = await response.text();
+          console.error('❌ Server error (text):', errorText);
+          if (errorText) {
+            errorMessage = `${errorMessage} - ${errorText}`;
+          }
+        } catch {
+          // If text parsing also fails, use default message
+          console.error('❌ Could not parse error response');
+        }
       }
       
       // Special handling for service unavailable (tunnel down)
@@ -189,10 +200,15 @@ async function fetchFromInternalApiDirect(instagramUrl: string): Promise<Interna
     rateLimitState.requests.push(Date.now());
     return data;
   } catch (error: any) {
+    console.error('❌ Error in fetchFromInternalApiDirect:', error);
     // Check if it's a network error (server not running)
-    if (error.message === 'Failed to fetch' || error.name === 'TypeError') {
-      throw new Error('❌ Proxy server not running at localhost:3001. Please start it with: npm run dev:server (or npm run dev:all to run both frontend & server)');
+    if (error.message === 'Failed to fetch' || error.name === 'TypeError' || error.message?.includes('fetch failed')) {
+      // Check if it's actually a network error or if we got a response
+      if (!error.response) {
+        throw new Error('❌ Proxy server not running at localhost:3001. Please start it with: npm run dev:server (or npm run dev:all to run both frontend & server)');
+      }
     }
+    // Re-throw the error with its original message
     throw error;
   }
 }

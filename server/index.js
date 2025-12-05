@@ -184,9 +184,13 @@ app.post('/api/internal/scrape', async (req, res) => {
     res.json(data);
   } catch (error) {
     console.error('Error in /api/internal/scrape:', error);
+    const errorMessage = error?.message || error?.toString() || 'Unknown error occurred';
+    const errorDetails = error?.cause ? ` (${error.cause.message || error.cause})` : '';
+    console.error('   Error message:', errorMessage);
+    console.error('   Error details:', errorDetails);
     res.status(500).json({ 
       success: false, 
-      error: error.message 
+      error: errorMessage + errorDetails
     });
   }
 });
