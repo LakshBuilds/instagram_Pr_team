@@ -133,10 +133,45 @@ app.post('/api/internal/scrape', async (req, res) => {
     }
 
     console.log('🌐 Proxying to internal API:', url);
-    const response = await fetch(`${INTERNAL_API_URL}/scrape?url=${encodeURIComponent(url)}`);
+    let response;
+    try {
+      // Create a timeout promise
+      let timeoutId;
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Request timeout after 30 seconds')), 30000);
+      });
+      
+      // Race between fetch and timeout
+      const fetchPromise = fetch(`${INTERNAL_API_URL}/scrape?url=${encodeURIComponent(url)}`);
+      response = await Promise.race([fetchPromise, timeoutPromise]);
+      clearTimeout(timeoutId); // Clear timeout if fetch succeeds
+    } catch (fetchError) {
+      // Handle network errors (tunnel down, DNS failure, etc.)
+      if (fetchError.cause?.code === 'ENOTFOUND' || fetchError.message.includes('fetch failed') || fetchError.cause?.errno === -3008) {
+        console.error('❌ Network error: Cloudflare tunnel appears to be down or unreachable');
+        console.error('   Tunnel URL:', INTERNAL_API_URL);
+        console.error('   Error:', fetchError.message);
+        if (fetchError.cause) {
+          console.error('   Cause:', fetchError.cause.message);
+        }
+        return res.status(503).json({ 
+          success: false, 
+          error: 'Internal API service unavailable. The Cloudflare tunnel may be down. Please check if the tunnel is running.',
+          details: fetchError.message
+        });
+      }
+      if (fetchError.message.includes('timeout')) {
+        return res.status(504).json({ 
+          success: false, 
+          error: 'Request timeout. The internal API took too long to respond.',
+        });
+      }
+      throw fetchError; // Re-throw other errors
+    }
     
     if (!response.ok) {
-      throw new Error(`Internal API error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Internal API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();

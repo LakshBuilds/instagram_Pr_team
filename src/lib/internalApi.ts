@@ -158,13 +158,32 @@ async function fetchFromInternalApiDirect(instagramUrl: string): Promise<Interna
     });
     
     if (!response.ok) {
-      throw new Error(`Internal API error: ${response.status} ${response.statusText}`);
+      // Try to get error details from response
+      let errorMessage = `Internal API error: ${response.status} ${response.statusText}`;
+      try {
+        const errorData = await response.json();
+        if (errorData.error) {
+          errorMessage = errorData.error;
+          if (errorData.details) {
+            errorMessage += ` (${errorData.details})`;
+          }
+        }
+      } catch {
+        // If JSON parsing fails, use default message
+      }
+      
+      // Special handling for service unavailable (tunnel down)
+      if (response.status === 503) {
+        throw new Error(`Service Unavailable: ${errorMessage}`);
+      }
+      
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();
     
     if (!data.success) {
-      throw new Error(`Internal API returned error for ${instagramUrl}`);
+      throw new Error(data.error || `Internal API returned error for ${instagramUrl}`);
     }
 
     rateLimitState.requests.push(Date.now());
