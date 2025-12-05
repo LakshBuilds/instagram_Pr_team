@@ -201,14 +201,12 @@ async function fetchFromInternalApiDirect(instagramUrl: string): Promise<Interna
     return data;
   } catch (error: any) {
     console.error('❌ Error in fetchFromInternalApiDirect:', error);
-    // Check if it's a network error (server not running)
-    if (error.message === 'Failed to fetch' || error.name === 'TypeError' || error.message?.includes('fetch failed')) {
-      // Check if it's actually a network error or if we got a response
-      if (!error.response) {
-        throw new Error('❌ Proxy server not running at localhost:3001. Please start it with: npm run dev:server (or npm run dev:all to run both frontend & server)');
-      }
+    // Only check for network errors if the fetch itself failed (no response received)
+    // If we got a response (even 500), it's a server error, not a network error
+    if ((error.message === 'Failed to fetch' || error.name === 'TypeError') && !error.response) {
+      throw new Error('❌ Proxy server not running at localhost:3001. Please start it with: npm run dev:server (or npm run dev:all to run both frontend & server)');
     }
-    // Re-throw the error with its original message
+    // Re-throw the error with its original message (this includes server errors)
     throw error;
   }
 }

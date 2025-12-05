@@ -147,20 +147,31 @@ app.post('/api/internal/scrape', async (req, res) => {
       clearTimeout(timeoutId); // Clear timeout if fetch succeeds
     } catch (fetchError) {
       // Handle network errors (tunnel down, DNS failure, etc.)
-      if (fetchError.cause?.code === 'ENOTFOUND' || fetchError.message.includes('fetch failed') || fetchError.cause?.errno === -3008) {
+      const isNetworkError = 
+        fetchError.cause?.code === 'ENOTFOUND' || 
+        fetchError.cause?.errno === -3008 ||
+        fetchError.message?.includes('fetch failed') ||
+        fetchError.message?.includes('ENOTFOUND') ||
+        fetchError.name === 'TypeError' ||
+        (fetchError.cause && typeof fetchError.cause === 'object' && 'code' in fetchError.cause);
+      
+      if (isNetworkError) {
         console.error('❌ Network error: Cloudflare tunnel appears to be down or unreachable');
         console.error('   Tunnel URL:', INTERNAL_API_URL);
         console.error('   Error:', fetchError.message);
+        console.error('   Error name:', fetchError.name);
         if (fetchError.cause) {
-          console.error('   Cause:', fetchError.cause.message);
+          console.error('   Cause:', fetchError.cause);
+          console.error('   Cause code:', fetchError.cause.code);
+          console.error('   Cause errno:', fetchError.cause.errno);
         }
         return res.status(503).json({ 
           success: false, 
           error: 'Internal API service unavailable. The Cloudflare tunnel may be down. Please check if the tunnel is running.',
-          details: fetchError.message
+          details: fetchError.message || 'Network connection failed'
         });
       }
-      if (fetchError.message.includes('timeout')) {
+      if (fetchError.message?.includes('timeout') || fetchError.message?.includes('Timeout')) {
         return res.status(504).json({ 
           success: false, 
           error: 'Request timeout. The internal API took too long to respond.',
