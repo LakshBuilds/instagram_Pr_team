@@ -144,7 +144,9 @@ async function processQueue() {
 }
 
 async function fetchFromInternalApiDirect(instagramUrl: string): Promise<InternalApiResponse> {
-  const proxyUrl = 'http://localhost:3001/api/internal/scrape';
+  // Use environment variable for API server URL, fallback to localhost for development
+  const API_SERVER_URL = import.meta.env.VITE_API_SERVER_URL || 'http://localhost:3001';
+  const proxyUrl = `${API_SERVER_URL}/api/internal/scrape`;
   
   console.log(`🌐 Fetching from internal API (via proxy): ${instagramUrl}`);
   

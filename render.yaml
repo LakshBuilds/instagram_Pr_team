@@ -1,4 +1,18 @@
 services:
+  # Proxy Server - Node.js API Server
+  - type: web
+    name: instagram-pr-team-api
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: INTERNAL_API_URL
+        sync: false
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+
   # Frontend - Static Site
   - type: web
     name: instagram-pr-team
@@ -16,9 +30,15 @@ services:
         sync: false
       - key: VITE_APIFY_TOKEN
         sync: false
+      # IMPORTANT: Set this to your API service URL after deployment
+      # Format: https://instagram-pr-team-api.onrender.com
+      - key: VITE_API_SERVER_URL
+        sync: false
     headers:
       - path: /*
         name: Cache-Control
         value: no-cache
+
+
 
 
