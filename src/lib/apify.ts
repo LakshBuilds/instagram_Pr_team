@@ -582,6 +582,23 @@ export const saveReelsToSupabase = async (
   let errors = 0;
   const errorDetails: string[] = [];
 
+  const isZeroStats = (r: TransformedReel) => {
+    const plays = r.videoplaycount || r.videoviewcount || 0;
+    const likes = r.likescount || 0;
+    const comments = r.commentscount || 0;
+    return plays === 0 && likes === 0 && comments === 0;
+  };
+
+  const shouldAutoArchive = (r: TransformedReel) => {
+    // Only auto-archive if:
+    // - No stats
+    // - We actually received media/thumbnail (not a scrape failure)
+    // - The reel is not marked as failed/errored already
+    const hasMedia = Boolean((r as any).videourl || (r as any).thumbnailurl || (r as any).displayurl);
+    const flaggedFailed = Boolean((r as any).refresh_failed);
+    return !flaggedFailed && hasMedia && isZeroStats(r);
+  };
+
   for (const reel of reels) {
     try {
       // Check if reel already exists by permalink, url, or shortcode
@@ -690,6 +707,7 @@ export const saveReelsToSupabase = async (
         
         // Update existing reel (including archived status)
         // Make sure we're updating all the important fields
+        const shouldArchive = shouldAutoArchive(reel);
         const updateData = {
           ...reel,
           // language field removed - not in database schema
@@ -706,6 +724,7 @@ export const saveReelsToSupabase = async (
           has_audio: reel.has_audio,
           has_tagged_users: reel.has_tagged_users,
           locationname: reel.locationname,
+          is_archived: shouldArchive ? true : (reel as any).is_archived ?? false,
         };
         
         const { error } = await supabase
@@ -725,12 +744,14 @@ export const saveReelsToSupabase = async (
       } else {
         // Insert new reel (including archived status)
         // Ensure language is set to Hinglish if not provided
+        const shouldArchive = shouldAutoArchive(reel);
         const { error } = await supabase.from("reels").insert({
           ...reel,
           // language field removed - not in database schema
           created_by_user_id: userInfo.id,
           created_by_email: userInfo.email,
           created_by_name: userInfo.fullName,
+          is_archived: shouldArchive,
         });
 
         if (error) {
