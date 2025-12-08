@@ -306,6 +306,7 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
         
         // Check if reel should be marked as archived (all counts are 0)
         const shouldArchive = viewCount === 0 && likesCount === 0 && commentsCount === 0;
+        const shouldUnarchive = !shouldArchive;
         
         if (viewCount > 0) {
           updateData.videoplaycount = viewCount;
@@ -323,9 +324,13 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
           updateData.commentscount = transformed.commentscount;
         }
         
-        // Mark as archived by updating caption if all counts are 0
+        // Mark/unmark archived
+        updateData.is_archived = shouldArchive ? true : false;
+        // Maintain caption prefix for archived; remove if coming back
         if (shouldArchive && reel.caption && !reel.caption.startsWith('[Archived]')) {
           updateData.caption = `[Archived] ${reel.caption}`;
+        } else if (shouldUnarchive && reel.caption && reel.caption.startsWith('[Archived]')) {
+          updateData.caption = reel.caption.replace(/^\[Archived\]\s*/, '');
         }
         
         if (transformed.video_duration) updateData.video_duration = transformed.video_duration;
