@@ -599,6 +599,11 @@ export const saveReelsToSupabase = async (
     return !flaggedFailed && hasMedia && isZeroStats(r);
   };
 
+  const shouldAutoUnarchive = (r: TransformedReel) => {
+    // If we now have stats (plays/likes/comments), bring it back to active
+    return !isZeroStats(r);
+  };
+
   for (const reel of reels) {
     try {
       // Check if reel already exists by permalink, url, or shortcode
@@ -708,6 +713,7 @@ export const saveReelsToSupabase = async (
         // Update existing reel (including archived status)
         // Make sure we're updating all the important fields
         const shouldArchive = shouldAutoArchive(reel);
+        const shouldUnarchive = shouldAutoUnarchive(reel);
         const updateData = {
           ...reel,
           // language field removed - not in database schema
@@ -724,7 +730,8 @@ export const saveReelsToSupabase = async (
           has_audio: reel.has_audio,
           has_tagged_users: reel.has_tagged_users,
           locationname: reel.locationname,
-          is_archived: shouldArchive ? true : (reel as any).is_archived ?? false,
+          // Auto-archive zero-stat reels; auto-unarchive when stats appear
+          is_archived: shouldArchive ? true : (shouldUnarchive ? false : (reel as any).is_archived ?? false),
         };
         
         const { error } = await supabase
@@ -745,13 +752,15 @@ export const saveReelsToSupabase = async (
         // Insert new reel (including archived status)
         // Ensure language is set to Hinglish if not provided
         const shouldArchive = shouldAutoArchive(reel);
+        const shouldUnarchive = shouldAutoUnarchive(reel);
         const { error } = await supabase.from("reels").insert({
           ...reel,
           // language field removed - not in database schema
           created_by_user_id: userInfo.id,
           created_by_email: userInfo.email,
           created_by_name: userInfo.fullName,
-          is_archived: shouldArchive,
+          // New inserts: archive only if zero stats; otherwise keep active
+          is_archived: shouldArchive ? true : (shouldUnarchive ? false : false),
         });
 
         if (error) {
