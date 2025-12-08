@@ -206,7 +206,14 @@ async function fetchFromInternalApiDirect(instagramUrl: string): Promise<Interna
     // Only check for network errors if the fetch itself failed (no response received)
     // If we got a response (even 500), it's a server error, not a network error
     if ((error.message === 'Failed to fetch' || error.name === 'TypeError') && !error.response) {
-      throw new Error('❌ Proxy server not running at localhost:3001. Please start it with: npm run dev:server (or npm run dev:all to run both frontend & server)');
+      const apiServerUrl = import.meta.env.VITE_API_SERVER_URL || 'http://localhost:3001';
+      const isLocalhost = apiServerUrl.includes('localhost');
+      
+      if (isLocalhost) {
+        throw new Error('❌ Proxy server not running at localhost:3001. Please start it with: npm run dev:server (or npm run dev:all to run both frontend & server)');
+      } else {
+        throw new Error(`❌ Cannot connect to API server at ${apiServerUrl}. Please check if the Render API service is running and VITE_API_SERVER_URL is correctly set.`);
+      }
     }
     // Re-throw the error with its original message (this includes server errors)
     throw error;
