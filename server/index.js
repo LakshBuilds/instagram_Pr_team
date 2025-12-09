@@ -123,12 +123,13 @@ console.log('✅ Internal API URL loaded from .env:', INTERNAL_API_URL);
 
 app.post('/api/internal/scrape', async (req, res) => {
   try {
-    const { url } = req.body;
+    // Accept URL from query params OR body (frontend sends as query param)
+    const url = req.query.url || req.body.url;
     
     if (!url) {
       return res.status(400).json({ 
         success: false, 
-        error: 'URL is required' 
+        error: 'URL is required. Send as ?url= query param or in request body.' 
       });
     }
 
