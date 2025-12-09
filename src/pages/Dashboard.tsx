@@ -5,6 +5,7 @@ import Header from "@/components/dashboard/Header";
 import StatsCards from "@/components/dashboard/StatsCards";
 import ReelsTable from "@/components/dashboard/ReelsTable";
 import LocationMap from "@/components/dashboard/LocationMap";
+import ProgressTracker from "@/components/dashboard/ProgressTracker";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -479,6 +480,11 @@ const Dashboard = () => {
           </TabsList>
 
           <TabsContent value="your-reels" className="space-y-6">
+            <ProgressTracker 
+              yourViews={yourStats.totalViews} 
+              teamViews={allStats.totalViews} 
+              variant="your-reels" 
+            />
             <StatsCards {...yourStats} />
             {viewMode === "map" ? (
               <LocationMap 
@@ -495,6 +501,11 @@ const Dashboard = () => {
           </TabsContent>
 
           <TabsContent value="team-reels" className="space-y-6">
+            <ProgressTracker 
+              yourViews={yourStats.totalViews} 
+              teamViews={allStats.totalViews} 
+              variant="team-reels" 
+            />
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1 flex items-center gap-2">
                 <Button
