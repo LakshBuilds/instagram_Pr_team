@@ -9,9 +9,11 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Trash2, ExternalLink, Pencil, Check, X, Archive } from "lucide-react";
+import { Trash2, ExternalLink, Pencil, Check, X, Archive, RefreshCw, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { fetchFromInternalApi, transformInternalApiToReel } from "@/lib/internalApi";
+import { getApiProvider } from "@/lib/apiProvider";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -35,6 +37,9 @@ interface Reel {
   is_archived?: boolean | null;
   locationname?: string | null;
   language?: string | null;
+  shortcode?: string | null;
+  url?: string | null;
+  inputurl?: string | null;
 }
 
 const LANGUAGES = [
@@ -71,6 +76,7 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
   const [editLocationValue, setEditLocationValue] = useState<string>("");
   const [editingLanguageId, setEditingLanguageId] = useState<string | null>(null);
   const [editLanguageValue, setEditLanguageValue] = useState<string>("Hinglish");
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
 
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from("reels").delete().eq("id", id);
@@ -139,6 +145,100 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
       toast.success("Language updated successfully");
       setEditingLanguageId(null);
       onUpdate();
+    }
+  };
+
+  const handleRefreshReel = async (reel: Reel) => {
+    const url = reel.permalink || reel.url || reel.inputurl;
+    if (!url) {
+      toast.error("No URL available for this reel");
+      return;
+    }
+
+    setRefreshingId(reel.id);
+    const provider = getApiProvider();
+
+    try {
+      if (provider === 'internal') {
+        const response = await fetchFromInternalApi(url, 5);
+        const transformed = transformInternalApiToReel(response, url);
+
+        const updateData: Record<string, unknown> = {
+          lastupdatedat: new Date().toISOString(),
+        };
+
+        // Update views only if > 0 (to protect against API failures)
+        const viewCount = transformed.videoplaycount || transformed.videoviewcount;
+        const likesCount = typeof transformed.likescount === 'number' ? transformed.likescount : 0;
+        const commentsCount = typeof transformed.commentscount === 'number' ? transformed.commentscount : 0;
+
+        // Check if reel should be marked as archived (all counts are 0)
+        const shouldArchive = viewCount === 0 && likesCount === 0 && commentsCount === 0;
+        const shouldUnarchive = !shouldArchive;
+
+        if (viewCount && viewCount > 0) {
+          updateData.videoplaycount = viewCount;
+          updateData.videoviewcount = viewCount;
+        } else {
+          updateData.videoplaycount = 0;
+          updateData.videoviewcount = 0;
+        }
+
+        if (typeof transformed.likescount === 'number') {
+          updateData.likescount = transformed.likescount;
+        }
+        if (typeof transformed.commentscount === 'number') {
+          updateData.commentscount = transformed.commentscount;
+        }
+
+        updateData.is_archived = shouldArchive;
+
+        if (shouldArchive && reel.caption && !reel.caption.startsWith('[Archived]')) {
+          updateData.caption = `[Archived] ${reel.caption}`;
+        } else if (shouldUnarchive && reel.caption && reel.caption.startsWith('[Archived]')) {
+          updateData.caption = reel.caption.replace(/^\[Archived\]\s*/, '');
+        }
+
+        if (transformed.video_duration) updateData.video_duration = transformed.video_duration;
+        if (transformed.takenat && !reel.takenat) updateData.takenat = transformed.takenat;
+
+        const { error } = await supabase.from("reels").update(updateData).eq("id", reel.id);
+        if (error) throw error;
+        toast.success(`Refreshed ${reel.shortcode || reel.ownerusername || 'reel'}`);
+      } else {
+        const APIFY_API_URL = "https://api.apify.com/v2/acts/apify~instagram-reel-scraper/run-sync-get-dataset-items";
+        const APIFY_TOKEN = import.meta.env.VITE_APIFY_TOKEN || "";
+
+        const response = await fetch(`${APIFY_API_URL}?token=${APIFY_TOKEN}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ directUrls: [url], resultsLimit: 1 }),
+        });
+
+        if (!response.ok) throw new Error(`Apify API error: ${response.status}`);
+        const data = await response.json();
+
+        if (data && data.length > 0) {
+          const reelData = data[0];
+          const { error } = await supabase.from("reels").update({
+            videoplaycount: reelData.videoPlayCount || reelData.playCount || 0,
+            likescount: reelData.likesCount || 0,
+            commentscount: reelData.commentsCount || 0,
+            lastupdatedat: new Date().toISOString(),
+          }).eq("id", reel.id);
+
+          if (error) throw error;
+          toast.success(`Refreshed ${reel.shortcode || reel.ownerusername || 'reel'}`);
+        } else {
+          toast.warning("No data returned from API");
+        }
+      }
+      onUpdate();
+    } catch (error) {
+      console.error("Error refreshing reel:", error);
+      toast.error(`Failed to refresh: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setRefreshingId(null);
     }
   };
 
@@ -326,13 +426,28 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                   {reel.takenat ? new Date(reel.takenat).toLocaleDateString() : "-"}
                 </TableCell>
                 <TableCell className="text-right">
-                  <div className="flex items-center justify-end gap-2">
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                      onClick={() => handleRefreshReel(reel)}
+                      disabled={refreshingId === reel.id}
+                      title="Refresh reel data"
+                    >
+                      {refreshingId === reel.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4" />
+                      )}
+                    </Button>
                     {reel.permalink && (
                       <Button
                         size="icon"
                         variant="ghost"
                         className="h-8 w-8"
                         onClick={() => window.open(reel.permalink!, "_blank")}
+                        title="Open in Instagram"
                       >
                         <ExternalLink className="h-4 w-4" />
                       </Button>
@@ -342,6 +457,7 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                       variant="ghost"
                       className="h-8 w-8 text-destructive hover:text-destructive"
                       onClick={() => handleDelete(reel.id)}
+                      title="Delete reel"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
