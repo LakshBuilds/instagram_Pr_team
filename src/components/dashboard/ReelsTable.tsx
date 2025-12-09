@@ -42,7 +42,8 @@ interface Reel {
   inputurl?: string | null;
 }
 
-const LANGUAGES = [
+// Fallback languages if database fetch fails
+const FALLBACK_LANGUAGES = [
   "Hinglish",
   "Hindi",
   "Bengali",
@@ -50,18 +51,7 @@ const LANGUAGES = [
   "Telugu",
   "Tamil",
   "Gujarati",
-  "Urdu",
-  "Kannada",
-  "Odia",
-  "Malayalam",
-  "Punjabi",
-  "Assamese",
-  "Maithili",
-  "Konkani",
-  "Sindhi",
-  "Kashmiri",
-  "Dogri",
-  "Manipuri (Meiteilon)",
+  "English",
 ];
 
 interface ReelsTableProps {
@@ -76,12 +66,40 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
   const [editLocationValue, setEditLocationValue] = useState<string>("");
   const [editingLanguageId, setEditingLanguageId] = useState<string | null>(null);
   const [editLanguageValue, setEditLanguageValue] = useState<string>("Hinglish");
+  const [languages, setLanguages] = useState<string[]>(FALLBACK_LANGUAGES);
   
   // Queue system for refreshing reels
   const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set());
   const [queuedIds, setQueuedIds] = useState<Set<string>>(new Set());
   const refreshQueueRef = useRef<Array<{ reel: Reel; id: string }>>([]);
   const isProcessingRef = useRef(false);
+
+  // Fetch languages from language_locations table
+  useEffect(() => {
+    const fetchLanguages = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("language_locations")
+          .select("language")
+          .order("language");
+        
+        if (error) {
+          console.error("Error fetching languages:", error);
+          return;
+        }
+        
+        if (data && data.length > 0) {
+          // Get unique languages
+          const uniqueLanguages = [...new Set(data.map(item => item.language))];
+          setLanguages(uniqueLanguages);
+        }
+      } catch (err) {
+        console.error("Failed to fetch languages:", err);
+      }
+    };
+    
+    fetchLanguages();
+  }, []);
 
   // Synced scroll refs for top scrollbar
   const topScrollRef = useRef<HTMLDivElement>(null);
@@ -177,17 +195,32 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
   };
 
   const handleSaveLanguage = async (id: string) => {
-    const { error } = await supabase
-      .from("reels")
-      .update({ language: editLanguageValue || "Hinglish" })
-      .eq("id", id);
+    console.log("🔧 Saving language:", { id, language: editLanguageValue });
+    toast.loading("Saving language...", { id: "save-lang" });
+    
+    try {
+      const { error, data } = await supabase
+        .from("reels")
+        .update({ language: editLanguageValue || "Hinglish" })
+        .eq("id", id)
+        .select();
 
-    if (error) {
-      toast.error("Failed to update language");
-    } else {
-      toast.success("Language updated successfully");
-      setEditingLanguageId(null);
-      onUpdate();
+      console.log("🔧 Supabase response:", { error, data });
+
+      if (error) {
+        console.error("🔧 Error details:", JSON.stringify(error, null, 2));
+        toast.error(`Failed: ${error.message || error.code || 'Unknown error'}`, { id: "save-lang" });
+      } else if (!data || data.length === 0) {
+        console.error("🔧 No rows updated - RLS policy may be blocking");
+        toast.error("Failed: No permission to update this reel", { id: "save-lang" });
+      } else {
+        toast.success("Language updated!", { id: "save-lang" });
+        setEditingLanguageId(null);
+        onUpdate();
+      }
+    } catch (err) {
+      console.error("🔧 Exception:", err);
+      toast.error("Failed to update language", { id: "save-lang" });
     }
   };
 
@@ -491,7 +524,7 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {LANGUAGES.map((lang) => (
+                          {languages.map((lang) => (
                             <SelectItem key={lang} value={lang}>
                               {lang}
                             </SelectItem>
