@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   Table,
   TableBody,
@@ -82,6 +82,44 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
   const [queuedIds, setQueuedIds] = useState<Set<string>>(new Set());
   const refreshQueueRef = useRef<Array<{ reel: Reel; id: string }>>([]);
   const isProcessingRef = useRef(false);
+
+  // Synced scroll refs for top scrollbar
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const [scrollWidth, setScrollWidth] = useState(0);
+
+  // Sync scroll positions between top scrollbar and table
+  useEffect(() => {
+    const topScroll = topScrollRef.current;
+    const tableScroll = tableScrollRef.current;
+
+    if (!topScroll || !tableScroll) return;
+
+    // Update scroll width
+    setScrollWidth(tableScroll.scrollWidth);
+
+    const syncTopToTable = () => {
+      if (tableScroll) tableScroll.scrollLeft = topScroll.scrollLeft;
+    };
+    const syncTableToTop = () => {
+      if (topScroll) topScroll.scrollLeft = tableScroll.scrollLeft;
+    };
+
+    topScroll.addEventListener('scroll', syncTopToTable);
+    tableScroll.addEventListener('scroll', syncTableToTop);
+
+    // Update scroll width on resize
+    const resizeObserver = new ResizeObserver(() => {
+      setScrollWidth(tableScroll.scrollWidth);
+    });
+    resizeObserver.observe(tableScroll);
+
+    return () => {
+      topScroll.removeEventListener('scroll', syncTopToTable);
+      tableScroll.removeEventListener('scroll', syncTableToTop);
+      resizeObserver.disconnect();
+    };
+  }, [reels]);
 
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from("reels").delete().eq("id", id);
@@ -321,7 +359,7 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
   const totalInQueue = refreshingIds.size + queuedIds.size;
 
   return (
-    <div className="rounded-lg border bg-card overflow-x-auto">
+    <div className="rounded-lg border bg-card">
       {/* Queue Status Bar */}
       {totalInQueue > 0 && (
         <div className="px-4 py-2 bg-blue-50 border-b flex items-center justify-between">
@@ -347,7 +385,19 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
           </Button>
         </div>
       )}
-      <Table className="relative">
+      
+      {/* Top Horizontal Scrollbar */}
+      <div 
+        ref={topScrollRef}
+        className="overflow-x-auto overflow-y-hidden border-b bg-muted/30"
+        style={{ height: '12px' }}
+      >
+        <div style={{ width: scrollWidth, height: '12px' }} />
+      </div>
+      
+      {/* Table with synced scroll */}
+      <div ref={tableScrollRef} className="overflow-x-auto">
+        <Table className="relative">
         <TableHeader>
           <TableRow>
             <TableHead className="sticky left-0 bg-background z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Status</TableHead>
@@ -590,6 +640,7 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
           )}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 };
