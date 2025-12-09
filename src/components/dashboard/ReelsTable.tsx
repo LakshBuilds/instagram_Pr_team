@@ -155,7 +155,9 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
 
   // Process a single reel refresh (internal function)
   const processOneReel = async (reel: Reel): Promise<void> => {
-    const url = reel.permalink || reel.url || reel.inputurl;
+    // Try all available URL sources, including constructing from shortcode
+    const url = reel.permalink || reel.url || reel.inputurl || 
+      (reel.shortcode ? `https://www.instagram.com/p/${reel.shortcode}/` : null);
     if (!url) {
       throw new Error("No URL available for this reel");
     }
@@ -284,9 +286,11 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
 
   // Add reel to refresh queue
   const handleRefreshReel = useCallback((reel: Reel) => {
-    const url = reel.permalink || reel.url || reel.inputurl;
+    // Try all available URL sources, including constructing from shortcode
+    const url = reel.permalink || reel.url || reel.inputurl || 
+      (reel.shortcode ? `https://www.instagram.com/p/${reel.shortcode}/` : null);
     if (!url) {
-      toast.error("No URL available for this reel");
+      toast.error("No URL available for this reel (no permalink, url, or shortcode)");
       return;
     }
 
