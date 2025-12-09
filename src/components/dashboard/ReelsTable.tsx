@@ -243,12 +243,12 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
   };
 
   return (
-    <div className="rounded-lg border bg-card">
-      <Table>
+    <div className="rounded-lg border bg-card overflow-x-auto">
+      <Table className="relative">
         <TableHeader>
           <TableRow>
-            <TableHead>Status</TableHead>
-            <TableHead>Username</TableHead>
+            <TableHead className="sticky left-0 bg-background z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Status</TableHead>
+            <TableHead className="sticky left-[85px] bg-background z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Username</TableHead>
             <TableHead>Caption</TableHead>
             <TableHead>Location</TableHead>
             <TableHead>Language</TableHead>
@@ -257,7 +257,7 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
             <TableHead className="text-right">Views</TableHead>
             <TableHead className="text-right">Payout</TableHead>
             <TableHead>Date</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
+            <TableHead className="text-right sticky right-0 bg-background z-10 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)]">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -273,7 +273,7 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                 key={reel.id}
                 className={reel.is_archived ? "opacity-60 bg-muted/30" : ""}
               >
-                <TableCell>
+                <TableCell className={`sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] ${reel.is_archived ? 'bg-muted/30' : 'bg-background'}`}>
                   {reel.is_archived ? (
                     <Badge variant="secondary" className="flex items-center gap-1 w-fit">
                       <Archive className="h-3 w-3" />
@@ -285,7 +285,7 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                     </Badge>
                   )}
                 </TableCell>
-                <TableCell className="font-medium">{reel.ownerusername || "-"}</TableCell>
+                <TableCell className={`font-medium sticky left-[85px] z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] ${reel.is_archived ? 'bg-muted/30' : 'bg-background'}`}>{reel.ownerusername || "-"}</TableCell>
                 <TableCell className="max-w-xs truncate">
                   {reel.caption || "-"}
                 </TableCell>
@@ -425,7 +425,7 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                 <TableCell>
                   {reel.takenat ? new Date(reel.takenat).toLocaleDateString() : "-"}
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className={`text-right sticky right-0 z-10 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)] ${reel.is_archived ? 'bg-muted/30' : 'bg-background'}`}>
                   <div className="flex items-center justify-end gap-1">
                     <Button
                       size="icon"
