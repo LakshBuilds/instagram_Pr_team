@@ -550,17 +550,22 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                         <RefreshCw className="h-4 w-4" />
                       )}
                     </Button>
-                    {reel.permalink && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8"
-                        onClick={() => window.open(reel.permalink!, "_blank")}
-                        title="Open in Instagram"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </Button>
-                    )}
+                    {(() => {
+                      // Get the best available URL for the reel
+                      const reelUrl = reel.permalink || reel.url || reel.inputurl || 
+                        (reel.shortcode ? `https://www.instagram.com/p/${reel.shortcode}/` : null);
+                      return reelUrl ? (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          onClick={() => window.open(reelUrl, "_blank")}
+                          title="Open in Instagram"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      ) : null;
+                    })()}
                     <Button
                       size="icon"
                       variant="ghost"
