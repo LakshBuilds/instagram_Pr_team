@@ -172,11 +172,15 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
         lastupdatedat: new Date().toISOString(),
       };
 
-      const viewCount = transformed.videoplaycount || transformed.videoviewcount;
-      const likesCount = typeof transformed.likescount === 'number' ? transformed.likescount : 0;
-      const commentsCount = typeof transformed.commentscount === 'number' ? transformed.commentscount : 0;
+      // Use ?? (nullish coalescing) to properly handle 0 values vs undefined/null
+      const viewCount = transformed.videoplaycount ?? transformed.videoviewcount ?? 0;
+      const likesCount = transformed.likescount ?? 0;
+      const commentsCount = transformed.commentscount ?? 0;
 
+      // Archive if ALL metrics are 0 (reel likely deleted/unavailable on Instagram)
       const shouldArchive = viewCount === 0 && likesCount === 0 && commentsCount === 0;
+      
+      console.log(`📊 Reel stats: views=${viewCount}, likes=${likesCount}, comments=${commentsCount}, shouldArchive=${shouldArchive}`);
       const shouldUnarchive = !shouldArchive;
 
       if (viewCount && viewCount > 0) {
