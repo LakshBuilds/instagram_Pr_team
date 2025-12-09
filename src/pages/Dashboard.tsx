@@ -139,14 +139,11 @@ const Dashboard = () => {
       console.log("✅ Team reels found:", teamReels?.length || 0);
       
       if (userReels && userReels.length > 0) {
-        const sample = userReels.slice(0, 3).map(r => ({
-          shortcode: r.shortcode,
-          likes: r.likescount,
-          comments: r.commentscount,
-          videoplaycount: r.videoplaycount,
-          videoviewcount: r.videoviewcount,
-        }));
-        console.log("📋 Sample user reels:", JSON.stringify(sample));
+        console.log("📋 Sample user reels:", userReels.slice(0, 2).map(r => ({
+          id: r.id,
+          email: r.created_by_email,
+          caption: r.caption?.substring(0, 50)
+        })));
       }
       
       if (teamReels && teamReels.length > 0) {
@@ -188,7 +185,7 @@ const Dashboard = () => {
           : (reel.commentscount || 0);
         return sum + comments;
       }, 0),
-      totalViews: uniqueReels.reduce((sum, reel) => sum + (reel.videoplaycount || reel.videoviewcount || 0), 0),
+      totalViews: uniqueReels.reduce((sum, reel) => sum + (reel.videoplaycount || 0), 0),
       totalPayout: uniqueReels.reduce((sum, reel) => sum + (parseFloat(String(reel.payout)) || 0), 0),
     };
   };
@@ -260,51 +257,18 @@ const Dashboard = () => {
         const response = await fetchFromInternalApi(url, 0); // Priority 0 for refresh
         const transformed = transformInternalApiToReel(response, url);
         
-        // Build update object - only include counts if they are valid (> 0)
-        // This prevents overwriting existing data with 0 from API failures
+        // Build update object with all available fields
         const updateData: any = {
+          videoplaycount: transformed.videoplaycount,
+          likescount: transformed.likescount,
+          commentscount: transformed.commentscount,
           lastupdatedat: new Date().toISOString(),
           refresh_failed: false, // Mark as successful
         };
         
-        // Update counts - views only if > 0 (to protect against API failures)
-        // But likes/comments can be 0 (valid value), so update if defined
-        const viewCount = transformed.videoplaycount || transformed.videoviewcount;
-        const likesCount = typeof transformed.likescount === 'number' ? transformed.likescount : 0;
-        const commentsCount = typeof transformed.commentscount === 'number' ? transformed.commentscount : 0;
-        
-        // Check if reel should be marked as archived (all counts are 0)
-        const shouldArchive = viewCount === 0 && likesCount === 0 && commentsCount === 0;
-        
-        if (viewCount > 0) {
-          updateData.videoplaycount = viewCount;
-          updateData.videoviewcount = viewCount;
-        } else {
-          // If views are 0, update them (might be archived/deleted)
-          updateData.videoplaycount = 0;
-          updateData.videoviewcount = 0;
-        }
-        // Update likes and comments if they're defined (including 0, which is valid)
-        if (typeof transformed.likescount === 'number') {
-          updateData.likescount = transformed.likescount;
-        }
-        if (typeof transformed.commentscount === 'number') {
-          updateData.commentscount = transformed.commentscount;
-        }
-        
-        // Mark as archived by updating caption if all counts are 0
-        if (shouldArchive && reel.caption && !reel.caption.startsWith('[Archived]')) {
-          updateData.caption = `[Archived] ${reel.caption}`;
-        }
-        
         // Add takenat (date of posting) if available and not already set
         if (transformed.takenat && !reel.takenat) {
           updateData.takenat = transformed.takenat;
-        }
-        
-        // Update video_duration if available
-        if (transformed.video_duration) {
-          updateData.video_duration = transformed.video_duration;
         }
         
         // Update the reel in database
@@ -425,50 +389,15 @@ const Dashboard = () => {
             const response = await fetchFromInternalApi(url, 0);
             const transformed = transformInternalApiToReel(response, url);
             
-            // Build update object
-            const updateData: any = {
-              lastupdatedat: new Date().toISOString(),
-              refresh_failed: false,
-            };
-            // Update views only if > 0 (to protect against API failures)
-            const viewCount = transformed.videoplaycount || transformed.videoviewcount;
-            const likesCount = typeof transformed.likescount === 'number' ? transformed.likescount : 0;
-            const commentsCount = typeof transformed.commentscount === 'number' ? transformed.commentscount : 0;
-            
-            // Check if reel should be marked as archived (all counts are 0)
-            const shouldArchive = viewCount === 0 && likesCount === 0 && commentsCount === 0;
-            const shouldUnarchive = !shouldArchive;
-            
-            if (viewCount > 0) {
-              updateData.videoplaycount = viewCount;
-              updateData.videoviewcount = viewCount;
-            } else {
-              // If views are 0, update them (might be archived/deleted)
-              updateData.videoplaycount = 0;
-              updateData.videoviewcount = 0;
-            }
-            // Update likes and comments if defined (including 0, which is valid)
-            if (typeof transformed.likescount === 'number') {
-              updateData.likescount = transformed.likescount;
-            }
-            if (typeof transformed.commentscount === 'number') {
-              updateData.commentscount = transformed.commentscount;
-            }
-            
-            // Mark/unmark archived and adjust caption prefix
-            updateData.is_archived = shouldArchive ? true : false;
-            if (shouldArchive && reel.caption && !reel.caption.startsWith('[Archived]')) {
-              updateData.caption = `[Archived] ${reel.caption}`;
-            } else if (shouldUnarchive && reel.caption && reel.caption.startsWith('[Archived]')) {
-              updateData.caption = reel.caption.replace(/^\[Archived\]\s*/, '');
-            }
-            
-            if (transformed.video_duration) updateData.video_duration = transformed.video_duration;
-            if (transformed.takenat && !reel.takenat) updateData.takenat = transformed.takenat;
-            
             const { error: updateError } = await supabase
               .from("reels")
-              .update(updateData)
+              .update({
+                videoplaycount: transformed.videoplaycount,
+                likescount: transformed.likescount,
+                commentscount: transformed.commentscount,
+                lastupdatedat: new Date().toISOString(),
+                refresh_failed: false,
+              } as any)
               .eq("id", reel.id);
             
             if (updateError) {

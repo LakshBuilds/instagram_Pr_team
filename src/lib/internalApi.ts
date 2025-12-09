@@ -1,6 +1,8 @@
 // Internal API service for fetching Instagram data
 // This uses your custom scraper API instead of Apify
-// Note: The frontend calls the proxy server at localhost:3001, which then proxies to the Internal API
+
+// Cloudflare tunnel URL for the Instagram Reel Scraper API
+const INTERNAL_API_URL = import.meta.env.VITE_INTERNAL_API_URL || "https://strips-ministries-informal-examining.trycloudflare.com";
 
 // Rate limiting configuration
 const RATE_LIMIT = 20; // requests per window
@@ -106,7 +108,6 @@ async function processQueue() {
   }
 
   rateLimitState.processing = true;
-  console.log(`🚀 Processing queue (${rateLimitState.queue.length} requests)`);
 
   while (rateLimitState.queue.length > 0) {
     if (!canMakeRequest()) {
@@ -122,10 +123,6 @@ async function processQueue() {
     
     if (!item) break;
 
-    cleanupRateLimitState();
-    const currentCount = rateLimitState.requests.length;
-    console.log(`🔄 Processing request ${currentCount + 1}/${RATE_LIMIT} (${rateLimitState.queue.length} remaining in queue)`);
-
     try {
       const data = await fetchFromInternalApiDirect(item.url);
       item.resolve(data);
@@ -134,8 +131,6 @@ async function processQueue() {
     }
 
     if (rateLimitState.queue.length > 0) {
-      const delaySeconds = Math.ceil(REQUEST_DELAY_MS / 1000);
-      console.log(`⏸️  Rate limiting: Waiting ${delaySeconds}s before next request (${rateLimitState.queue.length} in queue)`);
       await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY_MS));
     }
   }
@@ -144,14 +139,14 @@ async function processQueue() {
 }
 
 async function fetchFromInternalApiDirect(instagramUrl: string): Promise<InternalApiResponse> {
-  // Use environment variable for API server URL, fallback to localhost for development
-  const API_SERVER_URL = import.meta.env.VITE_API_SERVER_URL || 'http://localhost:3001';
-  const proxyUrl = `${API_SERVER_URL}/api/internal/scrape`;
+  // Call the Cloudflare tunnel API directly (no local proxy needed)
+  const apiUrl = `${INTERNAL_API_URL}/scrape`;
   
-  console.log(`🌐 Fetching from internal API (via proxy): ${instagramUrl}`);
+  console.log(`🌐 Fetching from internal API: ${instagramUrl}`);
+  console.log(`📡 API endpoint: ${apiUrl}`);
   
   try {
-    const response = await fetch(proxyUrl, {
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -160,37 +155,8 @@ async function fetchFromInternalApiDirect(instagramUrl: string): Promise<Interna
     });
     
     if (!response.ok) {
-      // Try to get error details from response
-      let errorMessage = `Internal API error: ${response.status} ${response.statusText}`;
-      try {
-        const errorData = await response.json();
-        console.error('❌ Server error response:', errorData);
-        if (errorData.error) {
-          errorMessage = errorData.error;
-          if (errorData.details) {
-            errorMessage += ` (${errorData.details})`;
-          }
-        }
-      } catch (parseError) {
-        // If JSON parsing fails, try to get text response
-        try {
-          const errorText = await response.text();
-          console.error('❌ Server error (text):', errorText);
-          if (errorText) {
-            errorMessage = `${errorMessage} - ${errorText}`;
-          }
-        } catch {
-          // If text parsing also fails, use default message
-          console.error('❌ Could not parse error response');
-        }
-      }
-      
-      // Special handling for service unavailable (tunnel down)
-      if (response.status === 503) {
-        throw new Error(`Service Unavailable: ${errorMessage}`);
-      }
-      
-      throw new Error(errorMessage);
+      const errorText = await response.text();
+      throw new Error(`Internal API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const data = await response.json();
@@ -201,21 +167,10 @@ async function fetchFromInternalApiDirect(instagramUrl: string): Promise<Interna
 
     rateLimitState.requests.push(Date.now());
     return data;
-  } catch (error: any) {
-    console.error('❌ Error in fetchFromInternalApiDirect:', error);
-    // Only check for network errors if the fetch itself failed (no response received)
-    // If we got a response (even 500), it's a server error, not a network error
-    if ((error.message === 'Failed to fetch' || error.name === 'TypeError') && !error.response) {
-      const apiServerUrl = import.meta.env.VITE_API_SERVER_URL || 'http://localhost:3001';
-      const isLocalhost = apiServerUrl.includes('localhost');
-      
-      if (isLocalhost) {
-        throw new Error('❌ Proxy server not running at localhost:3001. Please start it with: npm run dev:server (or npm run dev:all to run both frontend & server)');
-      } else {
-        throw new Error(`❌ Cannot connect to API server at ${apiServerUrl}. Please check if the Render API service is running and VITE_API_SERVER_URL is correctly set.`);
-      }
+  } catch (error) {
+    if (error instanceof TypeError && error.message === 'Failed to fetch') {
+      throw new Error(`❌ Cannot connect to API at ${INTERNAL_API_URL}. The server may be down or unreachable.`);
     }
-    // Re-throw the error with its original message (this includes server errors)
     throw error;
   }
 }
@@ -225,18 +180,12 @@ export async function fetchFromInternalApi(
   priority: number = 0
 ): Promise<InternalApiResponse> {
   return new Promise((resolve, reject) => {
-    cleanupRateLimitState();
-    const currentRequests = rateLimitState.requests.length;
-    const queueLength = rateLimitState.queue.length;
-    
     rateLimitState.queue.push({
       url: instagramUrl,
       priority,
       resolve,
       reject,
     });
-    
-    console.log(`📥 Queued request (Priority: ${priority}) | Active: ${currentRequests}/${RATE_LIMIT} | Queue: ${queueLength + 1}`);
     processQueue();
   });
 }
@@ -266,15 +215,6 @@ export function transformInternalApiToReel(data: InternalApiResponse, inputUrl: 
   console.log(`📅 Date of posting (takenat): ${takenAt} from timestamp: ${apiData.timestamp}`);
   console.log(`⏱️ Video duration: ${videoDuration}s`);
   
-  // Get the best available view count (prioritize play_count, then video_view_count, then view_count)
-  const viewCount = apiData.engagement.play_count || 
-                    apiData.engagement.video_view_count || 
-                    apiData.engagement.view_count || 
-                    apiData.engagement.organic_video_view_count || 
-                    0;
-  
-  console.log(`👀 Views: play_count=${apiData.engagement.play_count}, video_view_count=${apiData.engagement.video_view_count}, view_count=${apiData.engagement.view_count}, using=${viewCount}`);
-  
   const resolvedId = `shortcode_${apiData.shortcode}`;
   
   return {
@@ -286,8 +226,8 @@ export function transformInternalApiToReel(data: InternalApiResponse, inputUrl: 
     caption: apiData.caption || "",
     likescount: apiData.engagement.like_count,
     commentscount: apiData.engagement.comment_count,
-    videoviewcount: viewCount,
-    videoplaycount: viewCount,
+    videoviewcount: apiData.engagement.play_count,
+    videoplaycount: apiData.engagement.play_count,
     timestamp: takenAt,
     takenat: takenAt,
     video_duration: videoDuration,
@@ -298,7 +238,7 @@ export function transformInternalApiToReel(data: InternalApiResponse, inputUrl: 
     url: `https://www.instagram.com/p/${apiData.shortcode}/`,
     permalink: `https://www.instagram.com/p/${apiData.shortcode}/`,
     inputurl: inputUrl,
-    // is_archived field removed - not in database schema
+    is_archived: false,
   };
 }
 
