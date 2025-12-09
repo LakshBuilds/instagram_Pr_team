@@ -1,8 +1,12 @@
 // Internal API service for fetching Instagram data
 // This uses your custom scraper API instead of Apify
 
-// Cloudflare tunnel URL for the Instagram Reel Scraper API
+// Cloudflare tunnel URL (used by the backend proxy server)
 const INTERNAL_API_URL = import.meta.env.VITE_INTERNAL_API_URL || "https://strips-ministries-informal-examining.trycloudflare.com";
+
+// Backend server URL for production (to avoid CORS)
+// In dev: uses Vite proxy, In prod: uses this URL
+const API_SERVER_URL = import.meta.env.VITE_API_SERVER_URL || "";
 
 // Rate limiting configuration
 const RATE_LIMIT = 20; // requests per window
@@ -139,11 +143,22 @@ async function processQueue() {
 }
 
 async function fetchFromInternalApiDirect(instagramUrl: string): Promise<InternalApiResponse> {
-  // Use Vite proxy to avoid CORS issues
-  // In dev: /api/internal/scrape -> proxied to Cloudflare tunnel
-  // In prod: use INTERNAL_API_URL directly
+  // Use Vite proxy in dev, backend server in prod (to avoid CORS)
+  // In dev: /api/internal/scrape -> Vite proxies to Cloudflare tunnel
+  // In prod: API_SERVER_URL/api/internal/scrape -> Express server proxies to Cloudflare tunnel
   const isDev = import.meta.env.DEV;
-  const apiUrl = isDev ? '/api/internal/scrape' : `${INTERNAL_API_URL}/scrape`;
+  
+  let apiUrl: string;
+  if (isDev) {
+    // Development: use Vite proxy
+    apiUrl = '/api/internal/scrape';
+  } else if (API_SERVER_URL) {
+    // Production with backend server: use the server's proxy endpoint
+    apiUrl = `${API_SERVER_URL}/api/internal/scrape`;
+  } else {
+    // Fallback: direct call (will fail due to CORS in browser)
+    apiUrl = `${INTERNAL_API_URL}/scrape`;
+  }
   
   console.log(`🌐 Fetching from internal API: ${instagramUrl}`);
   console.log(`📡 API endpoint: ${apiUrl}?url=... (dev mode: ${isDev})`);
@@ -174,7 +189,7 @@ async function fetchFromInternalApiDirect(instagramUrl: string): Promise<Interna
     return data;
   } catch (error) {
     if (error instanceof TypeError && error.message === 'Failed to fetch') {
-      const targetUrl = import.meta.env.DEV ? 'Vite proxy -> ' + INTERNAL_API_URL : INTERNAL_API_URL;
+      const targetUrl = isDev ? 'Vite proxy -> ' + INTERNAL_API_URL : (API_SERVER_URL || INTERNAL_API_URL);
       throw new Error(`❌ Cannot connect to API (${targetUrl}). The server may be down or unreachable.`);
     }
     throw error;
