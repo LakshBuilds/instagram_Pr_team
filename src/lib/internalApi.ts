@@ -139,19 +139,24 @@ async function processQueue() {
 }
 
 async function fetchFromInternalApiDirect(instagramUrl: string): Promise<InternalApiResponse> {
-  // Call the Cloudflare tunnel API directly (no local proxy needed)
-  const apiUrl = `${INTERNAL_API_URL}/scrape`;
+  // Use Vite proxy to avoid CORS issues
+  // In dev: /api/internal/scrape -> proxied to Cloudflare tunnel
+  // In prod: use INTERNAL_API_URL directly
+  const isDev = import.meta.env.DEV;
+  const apiUrl = isDev ? '/api/internal/scrape' : `${INTERNAL_API_URL}/scrape`;
   
   console.log(`🌐 Fetching from internal API: ${instagramUrl}`);
-  console.log(`📡 API endpoint: ${apiUrl}`);
+  console.log(`📡 API endpoint: ${apiUrl}?url=... (dev mode: ${isDev})`);
   
   try {
-    const response = await fetch(apiUrl, {
+    // API expects URL as query parameter
+    const fullUrl = `${apiUrl}?url=${encodeURIComponent(instagramUrl)}`;
+    
+    const response = await fetch(fullUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ url: instagramUrl }),
     });
     
     if (!response.ok) {
@@ -169,7 +174,8 @@ async function fetchFromInternalApiDirect(instagramUrl: string): Promise<Interna
     return data;
   } catch (error) {
     if (error instanceof TypeError && error.message === 'Failed to fetch') {
-      throw new Error(`❌ Cannot connect to API at ${INTERNAL_API_URL}. The server may be down or unreachable.`);
+      const targetUrl = import.meta.env.DEV ? 'Vite proxy -> ' + INTERNAL_API_URL : INTERNAL_API_URL;
+      throw new Error(`❌ Cannot connect to API (${targetUrl}). The server may be down or unreachable.`);
     }
     throw error;
   }
