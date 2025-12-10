@@ -19,10 +19,18 @@ interface CreatorComparisonChartProps {
   description?: string;
 }
 
+// Extract username from email (part before @)
+const extractUsernameFromEmail = (email: string | null): string | null => {
+  if (!email) return null;
+  const atIndex = email.indexOf('@');
+  if (atIndex === -1) return email;
+  return email.substring(0, atIndex);
+};
+
 const CreatorComparisonChart = ({ 
   reels, 
   title = "Creator Comparison",
-  description = "Performance comparison across Instagram accounts"
+  description = "Performance comparison across team members"
 }: CreatorComparisonChartProps) => {
   const creatorStats: { [key: string]: { 
     views: number; 
@@ -31,17 +39,19 @@ const CreatorComparisonChart = ({
     payout: number;
     count: number;
     name: string;
+    email: string;
   } } = {};
   
-  // Group by ownerusername (Instagram account that owns the reel)
+  // Group by created_by_email (team member who added the reel)
   reels.forEach(reel => {
-    // Use ownerusername as the primary grouping key (the Instagram account)
-    if (!reel.ownerusername) return; // Skip reels without username
+    // Extract username from email (e.g., "venkat" from "venkat@buyhatke.com")
+    const username = extractUsernameFromEmail(reel.created_by_email);
+    if (!username) return; // Skip reels without email
     
-    // Normalize username (lowercase, trim) to avoid duplicates from case differences
-    const normalizedUsername = reel.ownerusername.toLowerCase().trim();
-    const creatorKey = normalizedUsername;
-    const creatorName = reel.ownerusername;
+    // Normalize username (lowercase, trim) to avoid duplicates
+    const creatorKey = username.toLowerCase().trim();
+    // Capitalize first letter for display
+    const displayName = username.charAt(0).toUpperCase() + username.slice(1).toLowerCase();
     
     if (!creatorStats[creatorKey]) {
       creatorStats[creatorKey] = { 
@@ -50,7 +60,8 @@ const CreatorComparisonChart = ({
         comments: 0, 
         payout: 0,
         count: 0,
-        name: creatorName,
+        name: displayName,
+        email: reel.created_by_email || '',
       };
     }
     
@@ -69,6 +80,7 @@ const CreatorComparisonChart = ({
     .map(([key, stats]) => ({
       creator: stats.name.length > 15 ? stats.name.substring(0, 15) + "..." : stats.name,
       fullName: stats.name,
+      email: stats.email,
       totalViews: stats.views,
       totalLikes: stats.likes,
       totalComments: stats.comments,
@@ -79,7 +91,7 @@ const CreatorComparisonChart = ({
       count: stats.count,
     }))
     .sort((a, b) => b.totalViews - a.totalViews)
-    .slice(0, 10); // Top 10 creators by total views
+    .slice(0, 10); // Top 10 team members by total views
 
   if (data.length === 0) {
     return (
@@ -130,7 +142,8 @@ const CreatorComparisonChart = ({
                   const data = payload[0].payload;
                   return (
                     <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
-                      <p className="font-semibold text-base">@{data.fullName}</p>
+                      <p className="font-semibold text-base">{data.fullName}</p>
+                      <p className="text-xs text-muted-foreground">{data.email}</p>
                       <div className="mt-2 space-y-1">
                         <p className="text-sm font-medium text-chart-4">Total Views: {data.totalViews.toLocaleString()}</p>
                         <p className="text-sm font-medium text-chart-2">Total Likes: {data.totalLikes.toLocaleString()}</p>
@@ -143,7 +156,7 @@ const CreatorComparisonChart = ({
                       </div>
                       <div className="mt-2 pt-2 border-t border-border">
                         <p className="text-sm">Total Payout: <span className="font-semibold">₹{data.totalPayout.toFixed(2)}</span></p>
-                        <p className="text-xs text-muted-foreground">{data.count} reels</p>
+                        <p className="text-xs text-muted-foreground">{data.count} reels added</p>
                       </div>
                     </div>
                   );
