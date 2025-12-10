@@ -5,7 +5,9 @@ interface Reel {
   ownerusername: string | null;
   created_by_user_id: string | null;
   created_by_name: string | null;
+  created_by_email: string | null;
   videoplaycount: number | null;
+  videoviewcount?: number | null;
   likescount: number | null;
   commentscount: number | null;
   payout: number | null;
@@ -20,7 +22,7 @@ interface CreatorComparisonChartProps {
 const CreatorComparisonChart = ({ 
   reels, 
   title = "Creator Comparison",
-  description = "Performance comparison across creators/accounts"
+  description = "Performance comparison across Instagram accounts"
 }: CreatorComparisonChartProps) => {
   const creatorStats: { [key: string]: { 
     views: number; 
@@ -31,24 +33,15 @@ const CreatorComparisonChart = ({
     name: string;
   } } = {};
   
-  // First pass: group by created_by_user_id (most reliable)
+  // Group by ownerusername (Instagram account that owns the reel)
   reels.forEach(reel => {
-    let creatorKey: string;
-    let creatorName: string;
+    // Use ownerusername as the primary grouping key (the Instagram account)
+    if (!reel.ownerusername) return; // Skip reels without username
     
-    // Prioritize created_by_user_id for grouping (most unique identifier)
-    if (reel.created_by_user_id) {
-      creatorKey = `user_${reel.created_by_user_id}`;
-      creatorName = reel.created_by_name || reel.ownerusername || "Unknown";
-    } else if (reel.ownerusername) {
-      // Normalize username (lowercase, trim) to avoid duplicates from case differences
-      const normalizedUsername = reel.ownerusername.toLowerCase().trim();
-      creatorKey = `owner_${normalizedUsername}`;
-      creatorName = reel.ownerusername;
-    } else {
-      creatorKey = "unknown";
-      creatorName = "Unknown";
-    }
+    // Normalize username (lowercase, trim) to avoid duplicates from case differences
+    const normalizedUsername = reel.ownerusername.toLowerCase().trim();
+    const creatorKey = normalizedUsername;
+    const creatorName = reel.ownerusername;
     
     if (!creatorStats[creatorKey]) {
       creatorStats[creatorKey] = { 
@@ -75,14 +68,18 @@ const CreatorComparisonChart = ({
   const data = Object.entries(creatorStats)
     .map(([key, stats]) => ({
       creator: stats.name.length > 15 ? stats.name.substring(0, 15) + "..." : stats.name,
+      fullName: stats.name,
+      totalViews: stats.views,
+      totalLikes: stats.likes,
+      totalComments: stats.comments,
       avgViews: Math.round(stats.views / stats.count),
       avgLikes: Math.round(stats.likes / stats.count),
       avgComments: Math.round(stats.comments / stats.count),
       totalPayout: parseFloat(stats.payout.toFixed(2)),
       count: stats.count,
     }))
-    .sort((a, b) => b.avgViews - a.avgViews)
-    .slice(0, 10); // Top 10 creators
+    .sort((a, b) => b.totalViews - a.totalViews)
+    .slice(0, 10); // Top 10 creators by total views
 
   if (data.length === 0) {
     return (
@@ -133,12 +130,21 @@ const CreatorComparisonChart = ({
                   const data = payload[0].payload;
                   return (
                     <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
-                      <p className="font-semibold">{data.creator}</p>
-                      <p className="text-sm">Avg Views: {data.avgViews.toLocaleString()}</p>
-                      <p className="text-sm">Avg Likes: {data.avgLikes.toLocaleString()}</p>
-                      <p className="text-sm">Avg Comments: {data.avgComments.toLocaleString()}</p>
-                      <p className="text-sm">Total Payout: ₹{data.totalPayout.toFixed(2)}</p>
-                      <p className="text-sm">Reels: {data.count}</p>
+                      <p className="font-semibold text-base">@{data.fullName}</p>
+                      <div className="mt-2 space-y-1">
+                        <p className="text-sm font-medium text-chart-4">Total Views: {data.totalViews.toLocaleString()}</p>
+                        <p className="text-sm font-medium text-chart-2">Total Likes: {data.totalLikes.toLocaleString()}</p>
+                        <p className="text-sm font-medium text-chart-3">Total Comments: {data.totalComments.toLocaleString()}</p>
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-border space-y-1">
+                        <p className="text-xs text-muted-foreground">Avg Views/Reel: {data.avgViews.toLocaleString()}</p>
+                        <p className="text-xs text-muted-foreground">Avg Likes/Reel: {data.avgLikes.toLocaleString()}</p>
+                        <p className="text-xs text-muted-foreground">Avg Comments/Reel: {data.avgComments.toLocaleString()}</p>
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-border">
+                        <p className="text-sm">Total Payout: <span className="font-semibold">₹{data.totalPayout.toFixed(2)}</span></p>
+                        <p className="text-xs text-muted-foreground">{data.count} reels</p>
+                      </div>
                     </div>
                   );
                 }
@@ -146,9 +152,9 @@ const CreatorComparisonChart = ({
               }}
             />
             <Legend />
-            <Bar dataKey="avgViews" name="Avg Views" fill="hsl(var(--chart-4))" />
-            <Bar dataKey="avgLikes" name="Avg Likes" fill="hsl(var(--chart-2))" />
-            <Bar dataKey="avgComments" name="Avg Comments" fill="hsl(var(--chart-3))" />
+            <Bar dataKey="totalViews" name="Total Views" fill="hsl(var(--chart-4))" />
+            <Bar dataKey="totalLikes" name="Total Likes" fill="hsl(var(--chart-2))" />
+            <Bar dataKey="totalComments" name="Total Comments" fill="hsl(var(--chart-3))" />
           </BarChart>
         </ResponsiveContainer>
       </CardContent>
