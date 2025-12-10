@@ -6,6 +6,9 @@ import StatsCards from "@/components/dashboard/StatsCards";
 import ReelsTable from "@/components/dashboard/ReelsTable";
 import LocationMap from "@/components/dashboard/LocationMap";
 import ProgressTracker from "@/components/dashboard/ProgressTracker";
+import StreakCounter from "@/components/dashboard/StreakCounter";
+import AchievementsSection from "@/components/dashboard/AchievementsSection";
+import { calculateStreakData } from "@/lib/streakCalculator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -455,6 +458,11 @@ const Dashboard = () => {
 
   const yourStats = calculateStats(yourReels);
   const allStats = calculateStats(allReels);
+  
+  // Calculate streak data for the current user
+  const userEmail = user?.primaryEmailAddress?.emailAddress;
+  const userStreakData = calculateStreakData(yourReels, userEmail);
+  const teamStreakData = calculateStreakData(allReels);
 
   return (
     <div className="min-h-screen bg-background">
@@ -474,10 +482,26 @@ const Dashboard = () => {
           </p>
         </div>
         <Tabs defaultValue="your-reels" className="space-y-6" onValueChange={setActiveTab}>
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="your-reels">Your Reels</TabsTrigger>
-            <TabsTrigger value="team-reels">Team Reels</TabsTrigger>
-          </TabsList>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <TabsList className="grid w-full max-w-md grid-cols-2">
+              <TabsTrigger value="your-reels" className="flex items-center gap-2">
+                Your Reels
+                <StreakCounter 
+                  streak={userStreakData.currentStreak} 
+                  isActiveToday={userStreakData.isActiveToday} 
+                  size="sm" 
+                />
+              </TabsTrigger>
+              <TabsTrigger value="team-reels" className="flex items-center gap-2">
+                Team Reels
+                <StreakCounter 
+                  streak={teamStreakData.currentStreak} 
+                  isActiveToday={teamStreakData.isActiveToday} 
+                  size="sm" 
+                />
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="your-reels" className="space-y-6">
             <ProgressTracker 
@@ -485,6 +509,7 @@ const Dashboard = () => {
               teamViews={allStats.totalViews} 
               variant="your-reels" 
             />
+            <AchievementsSection reels={yourReels} userEmail={userEmail} />
             <StatsCards {...yourStats} />
             {viewMode === "map" ? (
               <LocationMap 
