@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Trophy, Flame, Target } from "lucide-react";
+import { Trophy, Flame, Target, Eye } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import AchievementBadge from "./AchievementBadge";
 import StreakCounter from "./StreakCounter";
@@ -9,12 +9,29 @@ interface Reel {
   id: string;
   takenat: string | null;
   created_by_email?: string | null;
+  videoviewcount?: number | null;
+  videoplaycount?: number | null;
+  likescount?: number | null;
 }
 
 interface AchievementsSectionProps {
   reels: Reel[];
   userEmail?: string;
 }
+
+// Format view count to readable string
+const formatViewCount = (views: number): string => {
+  if (views >= 1000000000) {
+    return `${(views / 1000000000).toFixed(1)}B`;
+  }
+  if (views >= 1000000) {
+    return `${(views / 1000000).toFixed(1)}M`;
+  }
+  if (views >= 1000) {
+    return `${(views / 1000).toFixed(1)}K`;
+  }
+  return views.toString();
+};
 
 const AchievementsSection = ({ reels, userEmail }: AchievementsSectionProps) => {
   const streakData = useMemo(() => calculateStreakData(reels, userEmail), [reels, userEmail]);
@@ -58,7 +75,7 @@ const AchievementsSection = ({ reels, userEmail }: AchievementsSectionProps) => 
 
       <CardContent className="p-6">
         {/* Stats Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
           <div className="text-center p-4 rounded-xl bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/20 dark:to-amber-950/20">
             <Flame className="h-6 w-6 mx-auto mb-2 text-orange-500" />
             <p className="text-2xl font-bold text-orange-600 dark:text-orange-400">{streakData.currentStreak}</p>
@@ -78,6 +95,11 @@ const AchievementsSection = ({ reels, userEmail }: AchievementsSectionProps) => 
             <div className="text-2xl mb-2">🎬</div>
             <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">{streakData.totalReels}</p>
             <p className="text-xs text-muted-foreground">Total Reels</p>
+          </div>
+          <div className="text-center p-4 rounded-xl bg-gradient-to-br from-sky-50 to-blue-50 dark:from-sky-950/20 dark:to-blue-950/20">
+            <Eye className="h-6 w-6 mx-auto mb-2 text-sky-500" />
+            <p className="text-2xl font-bold text-sky-600 dark:text-sky-400">{formatViewCount(streakData.totalViews)}</p>
+            <p className="text-xs text-muted-foreground">Total Views</p>
           </div>
         </div>
 
@@ -126,4 +148,5 @@ const AchievementsSection = ({ reels, userEmail }: AchievementsSectionProps) => 
 };
 
 export default AchievementsSection;
+
 

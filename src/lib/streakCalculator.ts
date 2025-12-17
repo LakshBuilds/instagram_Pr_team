@@ -1,9 +1,28 @@
 import { startOfDay, differenceInDays, isWeekend, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 
+/**
+ * Format view count to readable string (e.g., 1.5M, 500K)
+ */
+function formatViews(views: number): string {
+  if (views >= 1000000000) {
+    return `${(views / 1000000000).toFixed(1)}B`;
+  }
+  if (views >= 1000000) {
+    return `${(views / 1000000).toFixed(1)}M`;
+  }
+  if (views >= 1000) {
+    return `${(views / 1000).toFixed(1)}K`;
+  }
+  return views.toString();
+}
+
 interface Reel {
   id: string;
   takenat: string | null;
   created_by_email?: string | null;
+  videoviewcount?: number | null;
+  videoplaycount?: number | null;
+  likescount?: number | null;
 }
 
 export interface StreakData {
@@ -11,6 +30,8 @@ export interface StreakData {
   longestStreak: number;
   totalPostingDays: number;
   totalReels: number;
+  totalViews: number;
+  totalLikes: number;
   lastPostDate: Date | null;
   isActiveToday: boolean;
 }
@@ -44,12 +65,25 @@ export function calculateStreakData(reels: Reel[], userEmail?: string): StreakDa
     .filter((date, index, self) => self.indexOf(date) === index) // Unique dates
     .sort((a, b) => b - a); // Sort descending (most recent first)
 
+  // Calculate total views and likes
+  const totalViews = userReels.reduce((sum, r) => {
+    const views = r.videoplaycount ?? r.videoviewcount ?? 0;
+    return sum + (typeof views === 'number' ? views : 0);
+  }, 0);
+  
+  const totalLikes = userReels.reduce((sum, r) => {
+    const likes = r.likescount ?? 0;
+    return sum + (typeof likes === 'number' ? likes : 0);
+  }, 0);
+
   if (postingDates.length === 0) {
     return {
       currentStreak: 0,
       longestStreak: 0,
       totalPostingDays: 0,
       totalReels: userReels.length,
+      totalViews,
+      totalLikes,
       lastPostDate: null,
       isActiveToday: false,
     };
@@ -98,6 +132,8 @@ export function calculateStreakData(reels: Reel[], userEmail?: string): StreakDa
     longestStreak,
     totalPostingDays: postingDates.length,
     totalReels: userReels.length,
+    totalViews,
+    totalLikes,
     lastPostDate: new Date(postingDates[0]),
     isActiveToday,
   };
@@ -137,50 +173,7 @@ export function calculateAchievements(reels: Reel[], userEmail?: string): Achiev
   }).length;
 
   const achievements: AchievementData[] = [
-    {
-      id: "daily-dynamo",
-      name: "Daily Dynamo",
-      description: "Post a reel for 7 consecutive days",
-      criteria: `${Math.min(streakData.currentStreak, 7)}/7 days`,
-      icon: "🔥",
-      color: "text-orange-500",
-      bgColor: "from-orange-400 to-red-500",
-      isUnlocked: streakData.longestStreak >= 7,
-      progress: Math.min((streakData.currentStreak / 7) * 100, 100),
-    },
-    {
-      id: "streak-sovereign",
-      name: "Streak Sovereign",
-      description: "Post a reel for 30 consecutive days",
-      criteria: `${Math.min(streakData.currentStreak, 30)}/30 days`,
-      icon: "👑",
-      color: "text-green-500",
-      bgColor: "from-green-400 to-emerald-600",
-      isUnlocked: streakData.longestStreak >= 30,
-      progress: Math.min((streakData.currentStreak / 30) * 100, 100),
-    },
-    {
-      id: "weekend-creator",
-      name: "Weekend Creator",
-      description: "Post on 4 separate weekends this month",
-      criteria: `${Math.min(weekendPostsThisMonth, 4)}/4 weekends`,
-      icon: "📅",
-      color: "text-blue-500",
-      bgColor: "from-blue-400 to-cyan-500",
-      isUnlocked: weekendPostsThisMonth >= 4,
-      progress: Math.min((weekendPostsThisMonth / 4) * 100, 100),
-    },
-    {
-      id: "power-month",
-      name: "Power Month",
-      description: "Post 20 reels in a single month",
-      criteria: `${Math.min(postsThisMonth, 20)}/20 reels`,
-      icon: "⚡",
-      color: "text-purple-500",
-      bgColor: "from-purple-400 to-violet-600",
-      isUnlocked: postsThisMonth >= 20,
-      progress: Math.min((postsThisMonth / 20) * 100, 100),
-    },
+    // === STREAK ACHIEVEMENTS ===
     {
       id: "first-post",
       name: "First Post",
@@ -193,6 +186,76 @@ export function calculateAchievements(reels: Reel[], userEmail?: string): Achiev
       progress: streakData.totalReels >= 1 ? 100 : 0,
     },
     {
+      id: "daily-dynamo",
+      name: "Daily Dynamo",
+      description: "Post reels for 7 consecutive days",
+      criteria: `${Math.min(streakData.currentStreak, 7)}/7 days`,
+      icon: "🔥",
+      color: "text-orange-500",
+      bgColor: "from-orange-400 to-red-500",
+      isUnlocked: streakData.longestStreak >= 7,
+      progress: Math.min((streakData.currentStreak / 7) * 100, 100),
+    },
+    {
+      id: "streak-master",
+      name: "Streak Master",
+      description: "Post reels for 14 consecutive days",
+      criteria: `${Math.min(streakData.currentStreak, 14)}/14 days`,
+      icon: "💪",
+      color: "text-orange-600",
+      bgColor: "from-orange-500 to-red-600",
+      isUnlocked: streakData.longestStreak >= 14,
+      progress: Math.min((streakData.currentStreak / 14) * 100, 100),
+    },
+    {
+      id: "streak-sovereign",
+      name: "Streak Sovereign",
+      description: "Post reels for 30 consecutive days",
+      criteria: `${Math.min(streakData.currentStreak, 30)}/30 days`,
+      icon: "👑",
+      color: "text-green-500",
+      bgColor: "from-green-400 to-emerald-600",
+      isUnlocked: streakData.longestStreak >= 30,
+      progress: Math.min((streakData.currentStreak / 30) * 100, 100),
+    },
+    
+    // === MONTHLY VOLUME ACHIEVEMENTS ===
+    {
+      id: "weekend-warrior",
+      name: "Weekend Warrior",
+      description: "Post 20+ reels on weekends this month",
+      criteria: `${Math.min(weekendPostsThisMonth, 20)}/20 weekend reels`,
+      icon: "📅",
+      color: "text-blue-500",
+      bgColor: "from-blue-400 to-cyan-500",
+      isUnlocked: weekendPostsThisMonth >= 20,
+      progress: Math.min((weekendPostsThisMonth / 20) * 100, 100),
+    },
+    {
+      id: "power-month",
+      name: "Power Month",
+      description: "Post 100 reels in a single month",
+      criteria: `${Math.min(postsThisMonth, 100)}/100 reels`,
+      icon: "⚡",
+      color: "text-purple-500",
+      bgColor: "from-purple-400 to-violet-600",
+      isUnlocked: postsThisMonth >= 100,
+      progress: Math.min((postsThisMonth / 100) * 100, 100),
+    },
+    {
+      id: "content-machine",
+      name: "Content Machine",
+      description: "Post 150 reels in a single month",
+      criteria: `${Math.min(postsThisMonth, 150)}/150 reels`,
+      icon: "🤖",
+      color: "text-violet-500",
+      bgColor: "from-violet-500 to-purple-700",
+      isUnlocked: postsThisMonth >= 150,
+      progress: Math.min((postsThisMonth / 150) * 100, 100),
+    },
+    
+    // === TOTAL VOLUME ACHIEVEMENTS ===
+    {
       id: "centurion",
       name: "Centurion",
       description: "Reach 100 total reels posted",
@@ -204,6 +267,120 @@ export function calculateAchievements(reels: Reel[], userEmail?: string): Achiev
       progress: Math.min((streakData.totalReels / 100) * 100, 100),
     },
     {
+      id: "viral-factory",
+      name: "Viral Factory",
+      description: "Reach 500 total reels posted",
+      criteria: `${Math.min(streakData.totalReels, 500)}/500 reels`,
+      icon: "🏭",
+      color: "text-indigo-500",
+      bgColor: "from-indigo-400 to-indigo-600",
+      isUnlocked: streakData.totalReels >= 500,
+      progress: Math.min((streakData.totalReels / 500) * 100, 100),
+    },
+    {
+      id: "legend",
+      name: "Legend",
+      description: "Reach 1,000 total reels posted",
+      criteria: `${Math.min(streakData.totalReels, 1000).toLocaleString()}/1,000 reels`,
+      icon: "🏆",
+      color: "text-yellow-500",
+      bgColor: "from-yellow-400 to-amber-600",
+      isUnlocked: streakData.totalReels >= 1000,
+      progress: Math.min((streakData.totalReels / 1000) * 100, 100),
+    },
+    {
+      id: "infinity-creator",
+      name: "Infinity Creator",
+      description: "Reach 5,000 total reels posted",
+      criteria: `${Math.min(streakData.totalReels, 5000).toLocaleString()}/5,000 reels`,
+      icon: "♾️",
+      color: "text-rose-500",
+      bgColor: "from-rose-400 to-pink-600",
+      isUnlocked: streakData.totalReels >= 5000,
+      progress: Math.min((streakData.totalReels / 5000) * 100, 100),
+    },
+    
+    // === VIEW MILESTONES ===
+    {
+      id: "view-starter",
+      name: "View Starter",
+      description: "Cross 100K total views",
+      criteria: streakData.totalViews >= 100000 ? "100K+ Views!" : `${formatViews(streakData.totalViews)}/100K`,
+      icon: "👀",
+      color: "text-sky-500",
+      bgColor: "from-sky-400 to-blue-500",
+      isUnlocked: streakData.totalViews >= 100000,
+      progress: Math.min((streakData.totalViews / 100000) * 100, 100),
+    },
+    {
+      id: "million-club",
+      name: "Million Club",
+      description: "Cross 1 Million total views",
+      criteria: streakData.totalViews >= 1000000 ? "1M+ Views!" : `${formatViews(streakData.totalViews)}/1M`,
+      icon: "🌟",
+      color: "text-amber-500",
+      bgColor: "from-amber-400 to-yellow-500",
+      isUnlocked: streakData.totalViews >= 1000000,
+      progress: Math.min((streakData.totalViews / 1000000) * 100, 100),
+    },
+    {
+      id: "five-million",
+      name: "5M Superstar",
+      description: "Cross 5 Million total views",
+      criteria: streakData.totalViews >= 5000000 ? "5M+ Views!" : `${formatViews(streakData.totalViews)}/5M`,
+      icon: "⭐",
+      color: "text-yellow-500",
+      bgColor: "from-yellow-400 to-orange-500",
+      isUnlocked: streakData.totalViews >= 5000000,
+      progress: Math.min((streakData.totalViews / 5000000) * 100, 100),
+    },
+    {
+      id: "ten-million",
+      name: "10M Icon",
+      description: "Cross 10 Million total views",
+      criteria: streakData.totalViews >= 10000000 ? "10M+ Views!" : `${formatViews(streakData.totalViews)}/10M`,
+      icon: "💫",
+      color: "text-orange-500",
+      bgColor: "from-orange-400 to-red-500",
+      isUnlocked: streakData.totalViews >= 10000000,
+      progress: Math.min((streakData.totalViews / 10000000) * 100, 100),
+    },
+    {
+      id: "fifty-million",
+      name: "50M Megastar",
+      description: "Cross 50 Million total views",
+      criteria: streakData.totalViews >= 50000000 ? "50M+ Views!" : `${formatViews(streakData.totalViews)}/50M`,
+      icon: "🔥",
+      color: "text-red-500",
+      bgColor: "from-red-500 to-rose-600",
+      isUnlocked: streakData.totalViews >= 50000000,
+      progress: Math.min((streakData.totalViews / 50000000) * 100, 100),
+    },
+    {
+      id: "hundred-million",
+      name: "100M Legend",
+      description: "Cross 100 Million total views",
+      criteria: streakData.totalViews >= 100000000 ? "100M+ Views!" : `${formatViews(streakData.totalViews)}/100M`,
+      icon: "👑",
+      color: "text-purple-500",
+      bgColor: "from-purple-500 to-violet-600",
+      isUnlocked: streakData.totalViews >= 100000000,
+      progress: Math.min((streakData.totalViews / 100000000) * 100, 100),
+    },
+    {
+      id: "billion-views",
+      name: "Billion Views",
+      description: "Cross 1 Billion total views - THE ULTIMATE!",
+      criteria: streakData.totalViews >= 1000000000 ? "1B+ VIEWS! 🎉" : `${formatViews(streakData.totalViews)}/1B`,
+      icon: "💎",
+      color: "text-cyan-400",
+      bgColor: "from-cyan-400 via-blue-500 to-purple-600",
+      isUnlocked: streakData.totalViews >= 1000000000,
+      progress: Math.min((streakData.totalViews / 1000000000) * 100, 100),
+    },
+    
+    // === LONG-TERM ACHIEVEMENTS ===
+    {
       id: "one-year-strong",
       name: "One Year Strong",
       description: "Post content for 365 total days",
@@ -214,30 +391,9 @@ export function calculateAchievements(reels: Reel[], userEmail?: string): Achiev
       isUnlocked: streakData.totalPostingDays >= 365,
       progress: Math.min((streakData.totalPostingDays / 365) * 100, 100),
     },
-    {
-      id: "idea-generator",
-      name: "Idea Generator",
-      description: "Track content ideas for 14 consecutive days",
-      criteria: `${Math.min(streakData.currentStreak, 14)}/14 days`,
-      icon: "💡",
-      color: "text-orange-500",
-      bgColor: "from-orange-400 to-red-500",
-      isUnlocked: streakData.longestStreak >= 14,
-      progress: Math.min((streakData.currentStreak / 14) * 100, 100),
-    },
-    {
-      id: "the-finisher",
-      name: "The Finisher",
-      description: "Complete a 7-day viral challenge",
-      criteria: streakData.longestStreak >= 7 ? "Challenge Complete!" : `${Math.min(streakData.currentStreak, 7)}/7 days`,
-      icon: "🏁",
-      color: "text-yellow-500",
-      bgColor: "from-yellow-400 to-amber-500",
-      isUnlocked: streakData.longestStreak >= 7,
-      progress: Math.min((streakData.currentStreak / 7) * 100, 100),
-    },
   ];
 
   return achievements;
 }
+
 

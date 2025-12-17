@@ -257,3 +257,4 @@ const ProgressTracker = ({ yourViews, teamViews, target = TARGET_VIEWS, variant 
 
 export default ProgressTracker;
 
+

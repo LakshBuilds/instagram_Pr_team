@@ -572,7 +572,7 @@ export const fetchAndTransformApifyData = async (apiKey?: string): Promise<Trans
 };
 
 /**
- * Saves transformed reels to Supabase
+ * Saves transformed reels to Supabase with enhanced error handling
  */
 export const saveReelsToSupabase = async (
   reels: TransformedReel[],
@@ -582,178 +582,161 @@ export const saveReelsToSupabase = async (
   let errors = 0;
   const errorDetails: string[] = [];
 
-  for (const reel of reels) {
-    try {
-      // Check if reel already exists by permalink, url, or shortcode
-      const identifier = reel.permalink || reel.url || reel.shortcode;
-      if (!identifier) {
-        const errorMsg = "Skipping reel without identifier";
-        console.warn(errorMsg, reel);
-        errors++;
-        errorDetails.push(errorMsg);
-        continue;
-      }
+  // Process reels in smaller batches to avoid connection issues
+  const BATCH_SIZE = 3;
+  console.log(`Processing ${reels.length} reels in batches of ${BATCH_SIZE}`);
 
-      // Try to find existing reel by permalink, url, or inputurl
-      let existing = null;
-      let existingId = null;
-      
-      // First try by permalink
-      if (reel.permalink) {
-        const { data: permalinkMatch } = await supabase
-          .from("reels")
-          .select("id, permalink, url, inputurl, shortcode, videoplaycount, likescount, commentscount")
-          .eq("permalink", reel.permalink)
-          .maybeSingle();
-        if (permalinkMatch) {
-          existing = permalinkMatch;
-          existingId = permalinkMatch.id;
+  for (let i = 0; i < reels.length; i += BATCH_SIZE) {
+    const batch = reels.slice(i, i + BATCH_SIZE);
+    console.log(`Processing batch ${Math.floor(i/BATCH_SIZE) + 1} (${batch.length} reels)`);
+
+    // Add delay between batches to prevent overwhelming the connection
+    if (i > 0) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+
+    for (const reel of batch) {
+    // Retry logic for individual reel processing
+    let reelSuccess = false;
+    let reelError = null;
+    const maxRetries = 3;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Check if reel already exists by permalink, url, or shortcode
+        const identifier = reel.permalink || reel.url || reel.shortcode;
+        if (!identifier) {
+          const errorMsg = "Skipping reel without identifier";
+          console.warn(errorMsg, reel);
+          reelError = errorMsg;
+          break;
         }
-      }
-      
-      // If not found, try by url
-      if (!existing && reel.url) {
-        const { data: urlMatch } = await supabase
-          .from("reels")
-          .select("id, permalink, url, inputurl, shortcode, videoplaycount, likescount, commentscount")
-          .eq("url", reel.url)
-          .maybeSingle();
-        if (urlMatch) {
-          existing = urlMatch;
-          existingId = urlMatch.id;
-        }
-      }
-      
-      // If still not found, try by inputurl
-      if (!existing && reel.inputurl) {
-        const { data: inputUrlMatch } = await supabase
-          .from("reels")
-          .select("id, permalink, url, inputurl, shortcode, videoplaycount, likescount, commentscount")
-          .eq("inputurl", reel.inputurl)
-          .maybeSingle();
-        if (inputUrlMatch) {
-          existing = inputUrlMatch;
-          existingId = inputUrlMatch.id;
-        }
-      }
-      
-      // If still not found, try by shortcode (most reliable for matching)
-      if (!existing && reel.shortcode) {
-        const { data: shortcodeMatches } = await supabase
-          .from("reels")
-          .select("id, permalink, url, inputurl, shortcode, videoplaycount, likescount, commentscount")
-          .eq("shortcode", reel.shortcode)
-          .limit(1);
-        if (shortcodeMatches && shortcodeMatches.length > 0) {
-          existing = shortcodeMatches[0];
-          existingId = shortcodeMatches[0].id;
-          // Log if we found a match by shortcode
-          const oldViews = shortcodeMatches[0].videoplaycount || 0;
-          const newViews = reel.videoplaycount || 0;
-          if (oldViews !== newViews) {
-            console.log(`🔄 Matching by shortcode ${reel.shortcode}: views ${oldViews} → ${newViews}`);
-          }
-        }
-      }
-      
-      // If still not found, try fuzzy matching by URL parts
-      if (!existing && (reel.permalink || reel.url)) {
-        const searchUrl = reel.permalink || reel.url || "";
-        const urlParts = searchUrl.split('/').filter(p => p.length > 0);
-        const lastPart = urlParts[urlParts.length - 1];
-        
-        if (lastPart && lastPart.length > 5) {
-          // Try to find by URL containing the last part (shortcode-like)
-          const { data: fuzzyMatches } = await supabase
+
+        // Use optimized single query to find existing reel
+        let existing = null;
+        let existingId = null;
+
+        // Build conditions for the OR query
+        const conditions = [];
+        if (reel.permalink) conditions.push(`permalink.eq.${reel.permalink}`);
+        if (reel.url) conditions.push(`url.eq.${reel.url}`);
+        if (reel.inputurl) conditions.push(`inputurl.eq.${reel.inputurl}`);
+        if (reel.shortcode) conditions.push(`shortcode.eq.${reel.shortcode}`);
+
+        if (conditions.length > 0) {
+          const { data: existingMatch, error: findError } = await supabase
             .from("reels")
-            .select("id, permalink, url, inputurl, shortcode")
-            .or(`permalink.ilike.%${lastPart}%,url.ilike.%${lastPart}%,inputurl.ilike.%${lastPart}%`)
-            .limit(1);
-          if (fuzzyMatches && fuzzyMatches.length > 0) {
-            existing = fuzzyMatches[0];
-            existingId = fuzzyMatches[0].id;
-            console.log(`🔍 Fuzzy matched by URL part: ${lastPart}`);
+            .select("id, permalink, url, inputurl, shortcode, videoplaycount, likescount, commentscount")
+            .or(conditions.join(','))
+            .limit(1)
+            .maybeSingle();
+
+          if (findError) {
+            throw findError;
+          }
+
+          if (existingMatch) {
+            existing = existingMatch;
+            existingId = existingMatch.id;
           }
         }
-      }
 
-      if (existing && existingId) {
-        // Log what we're updating
-        const oldData = existing;
-        console.log(`📝 Updating reel ID ${existingId}:`, {
-          shortcode: reel.shortcode,
-          oldViews: oldData.videoplaycount || 0,
-          newViews: reel.videoplaycount || 0,
-          oldLikes: oldData.likescount || 0,
-          newLikes: reel.likescount || 0,
-        });
-        
-        // Update existing reel (including archived status)
-        // Make sure we're updating all the important fields
-        const updateData = {
-          ...reel,
-          // language field removed - not in database schema
-          updated_at: new Date().toISOString(),
-          // Explicitly set these fields to ensure they update
-          videoplaycount: reel.videoplaycount,
-          videoviewcount: reel.videoviewcount,
-          likescount: reel.likescount,
-          commentscount: reel.commentscount,
-          displayurl: reel.displayurl,
-          videourl: reel.videourl,
-          audiourl: reel.audiourl,
-          video_duration: reel.video_duration,
-          has_audio: reel.has_audio,
-          has_tagged_users: reel.has_tagged_users,
-          locationname: reel.locationname,
-        };
-        
-        const { error } = await supabase
-          .from("reels")
-          .update(updateData)
-          .eq("id", existingId);
+        if (existing && existingId) {
+          // Log what we're updating
+          const oldData = existing;
+          console.log(`📝 Updating reel ID ${existingId}:`, {
+            shortcode: reel.shortcode,
+            oldViews: oldData.videoplaycount || 0,
+            newViews: reel.videoplaycount || 0,
+            oldLikes: oldData.likescount || 0,
+            newLikes: reel.likescount || 0,
+          });
+          
+          // Update existing reel (including archived status)
+          const updateData = {
+            ...reel,
+            updated_at: new Date().toISOString(),
+            // Explicitly set these fields to ensure they update
+            videoplaycount: reel.videoplaycount,
+            videoviewcount: reel.videoviewcount,
+            likescount: reel.likescount,
+            commentscount: reel.commentscount,
+            displayurl: reel.displayurl,
+            videourl: reel.videourl,
+            audiourl: reel.audiourl,
+            video_duration: reel.video_duration,
+            has_audio: reel.has_audio,
+            has_tagged_users: reel.has_tagged_users,
+            locationname: reel.locationname,
+          };
+          
+          const { error } = await supabase
+            .from("reels")
+            .update(updateData)
+            .eq("id", existingId);
 
-        if (error) {
-          const errorMsg = `Error updating reel ${identifier}: ${error.message}`;
-          console.error(errorMsg, error);
-          errors++;
-          errorDetails.push(errorMsg);
-        } else {
-          success++;
+          if (error) {
+            throw error;
+          }
+
           console.log(`✅ Updated reel: ${identifier}`);
           if (reel.is_archived) {
             console.log(`Marked reel as archived: ${identifier}`);
           }
-        }
-      } else {
-        // Insert new reel (including archived status)
-        // Ensure language is set to Hinglish if not provided
-        const { error } = await supabase.from("reels").insert({
-          ...reel,
-          // language field removed - not in database schema
-          created_by_user_id: userInfo.id,
-          created_by_email: userInfo.email,
-          created_by_name: userInfo.fullName,
-        });
-
-        if (error) {
-          const errorMsg = `Error inserting reel ${identifier}: ${error.message}`;
-          console.error(errorMsg, error);
-          errors++;
-          errorDetails.push(errorMsg);
         } else {
-          success++;
+          // Insert new reel (including archived status)
+          const { error } = await supabase.from("reels").insert({
+            ...reel,
+            created_by_user_id: userInfo.id,
+            created_by_email: userInfo.email,
+            created_by_name: userInfo.fullName,
+          });
+
+          if (error) {
+            throw error;
+          }
+
+          console.log(`✅ Inserted new reel: ${identifier}`);
           if (reel.is_archived) {
             console.log(`Inserted archived reel: ${identifier}`);
           }
         }
+
+        reelSuccess = true;
+        break; // Success, exit retry loop
+
+      } catch (error: any) {
+        console.error(`Attempt ${attempt}/${maxRetries} failed for reel:`, error?.message);
+        reelError = error;
+        
+        // Check if it's a retryable error
+        const isRetryableError = 
+          error?.message?.includes('callback is no longer runnable') ||
+          error?.message?.includes('connection') ||
+          error?.message?.includes('timeout') ||
+          error?.code === 'PGRST301' ||
+          error?.code === 'PGRST116';
+
+        if (attempt === maxRetries || !isRetryableError) {
+          break; // Don't retry further
+        }
+
+        // Wait before retry with exponential backoff
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
-    } catch (error: any) {
-      const errorMsg = `Unexpected error processing reel: ${error?.message || error}`;
-      console.error(errorMsg, error);
+    }
+
+    // Record the result
+    if (reelSuccess) {
+      success++;
+    } else {
       errors++;
+      const errorMsg = reelError?.message || reelError || 'Unknown error processing reel';
       errorDetails.push(errorMsg);
     }
+  }
   }
 
   return { success, errors, errorDetails: errorDetails.length > 0 ? errorDetails : undefined };
