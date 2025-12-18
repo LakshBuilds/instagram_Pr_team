@@ -252,13 +252,13 @@ const Dashboard = () => {
     
     const results = { total: existingReels.length, success: 0, errors: 0 };
     
-    // Process each reel with rate limiting (priority 0 for refresh, lower than imports)
+    // Process each reel (server handles rate limiting)
     for (const reel of existingReels) {
       const url = reel.permalink || reel.url || reel.inputurl;
       if (!url) continue;
       
       try {
-        const response = await fetchFromInternalApi(url, 0); // Priority 0 for refresh
+        const response = await fetchFromInternalApi(url); // Direct call - server handles rate limiting
         const transformed = transformInternalApiToReel(response, url);
         
         // Build update object with all available fields
@@ -321,8 +321,8 @@ const Dashboard = () => {
       let result;
       
       if (provider === 'internal') {
-        // Refresh using internal API with rate limiting
-        toast.info("Refreshing reels using Internal API. This will respect rate limits (20 per 5 min)...");
+        // Refresh using internal API (server handles rate limiting)
+        toast.info("Refreshing reels using Internal API...");
         result = await refreshReelsFromInternalApi(userInfo);
       } else {
         result = await refreshAllReelsFromApify(userInfo, keyToUse);
@@ -390,7 +390,7 @@ const Dashboard = () => {
         
         try {
           if (provider === 'internal') {
-            const response = await fetchFromInternalApi(url, 0);
+            const response = await fetchFromInternalApi(url);
             const transformed = transformInternalApiToReel(response, url);
             
             const { error: updateError } = await supabase

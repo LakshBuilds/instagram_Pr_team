@@ -192,8 +192,8 @@ const ImportReel = () => {
       };
 
       if (apiProvider === 'internal') {
-        // Use Internal API - import one by one with rate limiting
-        toast.info(`Importing ${urls.length} reel(s) using Internal API. This may take a while due to rate limiting...`);
+        // Use Internal API - import one by one (server handles rate limiting)
+        toast.info(`Importing ${urls.length} reel(s) using Internal API...`);
         
         let successCount = 0;
         let errorCount = 0;
@@ -307,7 +307,7 @@ const ImportReel = () => {
           </p>
           <p className="text-sm text-primary mt-2">
             Currently using: <strong>{currentProvider === 'internal' ? 'Internal API' : 'External API (Apify)'}</strong>
-            {currentProvider === 'internal' && ' (Rate limited: ~20 requests per 5 minutes)'}
+
           </p>
         </div>
 
@@ -432,7 +432,7 @@ const ImportReel = () => {
             <CardHeader>
               <CardTitle className="text-primary">Using Internal API</CardTitle>
               <CardDescription>
-                Your custom scraper API is being used. Rate limited to ~20 requests per 5 minutes.
+                Your custom scraper API is being used. Rate limiting is handled server-side.
               </CardDescription>
             </CardHeader>
           </Card>
@@ -498,8 +498,8 @@ const ImportReel = () => {
                 <CardDescription>
                   Enter multiple reel URLs, one per line
                   {currentProvider === 'internal' && (
-                    <span className="text-yellow-600 dark:text-yellow-400 block mt-1">
-                      ⚠️ Note: With Internal API, bulk imports are processed one at a time with rate limiting.
+                    <span className="text-green-600 dark:text-green-400 block mt-1">
+                      ✅ Note: Using Internal API with server-side rate limiting for optimal performance.
                     </span>
                   )}
                 </CardDescription>

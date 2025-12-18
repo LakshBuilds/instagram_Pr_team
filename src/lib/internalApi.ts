@@ -8,22 +8,8 @@ const INTERNAL_API_URL = import.meta.env.VITE_INTERNAL_API_URL || "https://strip
 // In dev: uses Vite proxy, In prod: uses this URL
 const API_SERVER_URL = import.meta.env.VITE_API_SERVER_URL || "";
 
-// Rate limiting configuration
-const RATE_LIMIT = 20; // requests per window
-const RATE_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
-const REQUEST_DELAY_MS = (RATE_WINDOW_MS / RATE_LIMIT); // ~15 seconds between requests
-
-interface RateLimitState {
-  requests: number[];
-  queue: Array<{ url: string; priority: number; resolve: Function; reject: Function }>;
-  processing: boolean;
-}
-
-const rateLimitState: RateLimitState = {
-  requests: [],
-  queue: [],
-  processing: false,
-};
+// Rate limiting is now handled by the internal API server
+// No client-side rate limiting needed
 
 // Internal API response format
 interface InternalApiResponse {
@@ -94,53 +80,7 @@ function extractVideoDurationFromUrl(videoUrl: string | null): number | null {
   return null;
 }
 
-function cleanupRateLimitState() {
-  const now = Date.now();
-  rateLimitState.requests = rateLimitState.requests.filter(
-    time => now - time < RATE_WINDOW_MS
-  );
-}
-
-function canMakeRequest(): boolean {
-  cleanupRateLimitState();
-  return rateLimitState.requests.length < RATE_LIMIT;
-}
-
-async function processQueue() {
-  if (rateLimitState.processing || rateLimitState.queue.length === 0) {
-    return;
-  }
-
-  rateLimitState.processing = true;
-
-  while (rateLimitState.queue.length > 0) {
-    if (!canMakeRequest()) {
-      const oldestRequest = rateLimitState.requests[0];
-      const waitTime = RATE_WINDOW_MS - (Date.now() - oldestRequest);
-      console.log(`⏳ Rate limit reached. Waiting ${Math.ceil(waitTime / 1000)}s...`);
-      await new Promise(resolve => setTimeout(resolve, waitTime + 1000));
-      cleanupRateLimitState();
-    }
-
-    rateLimitState.queue.sort((a, b) => b.priority - a.priority);
-    const item = rateLimitState.queue.shift();
-    
-    if (!item) break;
-
-    try {
-      const data = await fetchFromInternalApiDirect(item.url);
-      item.resolve(data);
-    } catch (error) {
-      item.reject(error);
-    }
-
-    if (rateLimitState.queue.length > 0) {
-      await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY_MS));
-    }
-  }
-
-  rateLimitState.processing = false;
-}
+// Rate limiting removed - handled by internal API server
 
 async function fetchFromInternalApiDirect(instagramUrl: string): Promise<InternalApiResponse> {
   // Use Vite proxy in dev, backend server in prod (to avoid CORS)
@@ -185,7 +125,6 @@ async function fetchFromInternalApiDirect(instagramUrl: string): Promise<Interna
       throw new Error(data.error || `Internal API returned error for ${instagramUrl}`);
     }
 
-    rateLimitState.requests.push(Date.now());
     return data;
   } catch (error) {
     if (error instanceof TypeError && error.message === 'Failed to fetch') {
@@ -200,15 +139,8 @@ export async function fetchFromInternalApi(
   instagramUrl: string,
   priority: number = 0
 ): Promise<InternalApiResponse> {
-  return new Promise((resolve, reject) => {
-    rateLimitState.queue.push({
-      url: instagramUrl,
-      priority,
-      resolve,
-      reject,
-    });
-    processQueue();
-  });
+  // Direct call - rate limiting handled by internal API server
+  return fetchFromInternalApiDirect(instagramUrl);
 }
 
 /**
@@ -264,14 +196,12 @@ export function transformInternalApiToReel(data: InternalApiResponse, inputUrl: 
 }
 
 export function getRateLimitStatus() {
-  cleanupRateLimitState();
+  // Rate limiting is now handled by the internal API server
   return {
-    requestsInWindow: rateLimitState.requests.length,
-    limit: RATE_LIMIT,
-    queueLength: rateLimitState.queue.length,
-    canMakeRequest: canMakeRequest(),
-    nextAvailableIn: rateLimitState.requests.length >= RATE_LIMIT
-      ? Math.max(0, RATE_WINDOW_MS - (Date.now() - rateLimitState.requests[0]))
-      : 0,
+    requestsInWindow: 0,
+    limit: 'Handled by server',
+    queueLength: 0,
+    canMakeRequest: true,
+    nextAvailableIn: 0,
   };
 }
