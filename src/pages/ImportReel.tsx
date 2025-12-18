@@ -76,7 +76,7 @@ const ImportReel = () => {
         toast.info("Importing reel using Internal API...");
         
         try {
-          const internalData = await fetchFromInternalApi(singleReelUrl, 1); // Priority 1 for imports
+          const internalData = await fetchFromInternalApi(singleReelUrl);
           
           if (!internalData) {
             toast.error("No data returned from Internal API. Please check the URL.");
@@ -88,6 +88,18 @@ const ImportReel = () => {
           console.log("Internal API transformed reel:", transformedReel);
         } catch (internalError: any) {
           console.error("Internal API error:", internalError);
+          
+          // Check if it's a tunnel/connection error - offer fallback
+          if (internalError.message?.includes('service unavailable') || 
+              internalError.message?.includes('tunnel') ||
+              internalError.message?.includes('503') ||
+              internalError.message?.includes('fetch failed')) {
+            
+            toast.error("Internal API is unavailable. Please check if your Cloudflare tunnel is running, or switch to External API.");
+            setImportingSingle(false);
+            return;
+          }
+          
           toast.error(`Internal API error: ${internalError.message}`);
           setImportingSingle(false);
           return;
@@ -203,7 +215,7 @@ const ImportReel = () => {
           try {
             toast.info(`Importing reel ${i + 1}/${urls.length}...`);
             
-            const internalData = await fetchFromInternalApi(url, 1); // Priority 1 for imports
+            const internalData = await fetchFromInternalApi(url);
             
             if (internalData) {
               const transformedReel = transformInternalApiToReel(internalData, url);
