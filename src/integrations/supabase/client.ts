@@ -13,5 +13,12 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
+    // Disable Navigator Lock to prevent "lock not immediately available" errors
+    // This fixes issues with multiple tabs and session conflicts
+    lock: {
+      enabled: false,
+    },
+    // Disable debug mode to prevent console pausing
+    debug: false,
   }
 });
