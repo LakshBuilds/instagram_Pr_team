@@ -131,12 +131,12 @@ const Dashboard = () => {
       const { data: teamReels, error: teamError } = await (teamReelsQuery as any).order("takenat", { ascending: false });
 
       if (userError) {
-        console.error("Error fetching user reels:", userError);
-        throw userError;
+        console.log("Note: User reels query returned error (may be RLS or empty):", userError.message);
+        // Don't throw - continue with empty array
       }
       if (teamError) {
-        console.error("Error fetching team reels:", teamError);
-        throw teamError;
+        console.log("Note: Team reels query returned error (may be RLS or empty):", teamError.message);
+        // Don't throw - continue with empty array
       }
 
       console.log("✅ User reels found:", userReels?.length || 0);

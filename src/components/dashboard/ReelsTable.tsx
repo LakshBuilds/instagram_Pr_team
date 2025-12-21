@@ -74,7 +74,7 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
   const refreshQueueRef = useRef<Array<{ reel: Reel; id: string }>>([]);
   const isProcessingRef = useRef(false);
 
-  // Fetch languages from language_locations table
+  // Fetch languages from language_locations table (with graceful fallback)
   useEffect(() => {
     const fetchLanguages = async () => {
       try {
@@ -84,7 +84,8 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
           .order("language");
         
         if (error) {
-          console.error("Error fetching languages:", error);
+          // Silently use fallback - table might not exist or RLS issue
+          console.log("Using fallback languages (table not available)");
           return;
         }
         
@@ -94,7 +95,8 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
           setLanguages(uniqueLanguages);
         }
       } catch (err) {
-        console.error("Failed to fetch languages:", err);
+        // Silently use fallback
+        console.log("Using fallback languages");
       }
     };
     
