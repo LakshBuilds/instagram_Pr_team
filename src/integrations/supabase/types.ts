@@ -41,6 +41,51 @@ export type Database = {
         }
         Relationships: []
       }
+      views_history: {
+        Row: {
+          id: string
+          reel_id: string
+          shortcode: string
+          ownerusername: string | null
+          videoplaycount: number | null
+          videoviewcount: number | null
+          likescount: number | null
+          commentscount: number | null
+          recorded_at: string
+          takenat: string | null
+          updated_by_email: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          reel_id: string
+          shortcode: string
+          ownerusername?: string | null
+          videoplaycount?: number | null
+          videoviewcount?: number | null
+          likescount?: number | null
+          commentscount?: number | null
+          recorded_at?: string
+          takenat?: string | null
+          updated_by_email?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          reel_id?: string
+          shortcode?: string
+          ownerusername?: string | null
+          videoplaycount?: number | null
+          videoviewcount?: number | null
+          likescount?: number | null
+          commentscount?: number | null
+          recorded_at?: string
+          takenat?: string | null
+          updated_by_email?: string | null
+          created_at?: string | null
+        }
+        Relationships: []
+      }
       reels: {
         Row: {
           audioname: string | null
@@ -77,6 +122,9 @@ export type Database = {
           videourl: string | null
           videoviewcount: number | null
           videowatchcount: number | null
+          decay_priority: number | null
+          last_refresh_at: string | null
+          refresh_count: number | null
         }
         Insert: {
           audioname?: string | null

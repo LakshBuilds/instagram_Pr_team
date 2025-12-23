@@ -16,9 +16,14 @@ import TaggedUsersChart from "@/components/analytics/TaggedUsersChart";
 import SoundPerformanceChart from "@/components/analytics/SoundPerformanceChart";
 import PostingTimeHeatmap from "@/components/analytics/PostingTimeHeatmap";
 import CreatorComparisonChart from "@/components/analytics/CreatorComparisonChart";
+import ViewsGrowthChart from "@/components/analytics/ViewsGrowthChart";
+import SmartRefreshPanel from "@/components/analytics/SmartRefreshPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Heart, Eye, DollarSign, Video, MessageSquare } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Heart, Eye, DollarSign, Video, MessageSquare, TrendingUp } from "lucide-react";
 import { useUser } from "@clerk/clerk-react";
+import { getViewsInRange, getTotalViewsGrowth, ViewsGrowth } from "@/lib/viewsHistory";
 
 interface Reel {
   id: string;
@@ -33,13 +38,15 @@ interface Reel {
   takenat: string | null;
   created_by_user_id: string | null;
   created_by_name: string | null;
-  created_by_email?: string | null;
+  created_by_email: string | null;
   is_archived?: boolean | null;
   video_duration?: number | null;
   has_tagged_users?: boolean | null;
   usertags?: any;
   original_sound_info?: any;
   music_info?: any;
+  decay_priority?: number | null;
+  last_refresh_at?: string | null;
 }
 
 const Analytics = () => {
@@ -51,6 +58,16 @@ const Analytics = () => {
     from: subDays(new Date(), 30),
     to: new Date(),
   });
+  
+  // Timestamp-based analytics toggle
+  const [useTimestampAnalytics, setUseTimestampAnalytics] = useState(true);
+  const [viewsGrowthData, setViewsGrowthData] = useState<ViewsGrowth[]>([]);
+  const [timestampMetrics, setTimestampMetrics] = useState<{
+    totalViewsGrowth: number;
+    totalLikesGrowth: number;
+    reelsCount: number;
+  } | null>(null);
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date | undefined>();
 
   const userEmail = user?.primaryEmailAddress?.emailAddress;
 
@@ -62,10 +79,39 @@ const Analytics = () => {
     }
     const load = async () => {
       await fetchReels();
+      if (useTimestampAnalytics && dateRange?.from) {
+        await fetchViewsGrowthData();
+      }
       setLoading(false);
     };
     load();
   }, [isLoaded, user, navigate]);
+
+  // Fetch views growth data when date range or toggle changes
+  useEffect(() => {
+    if (useTimestampAnalytics && dateRange?.from && !loading) {
+      fetchViewsGrowthData();
+    }
+  }, [dateRange, useTimestampAnalytics]);
+
+  const fetchViewsGrowthData = async () => {
+    if (!dateRange?.from) return;
+    
+    const startDate = startOfDay(dateRange.from);
+    const endDate = dateRange.to ? endOfDay(dateRange.to) : endOfDay(new Date());
+    
+    console.log("📊 Fetching timestamp-based views growth...");
+    
+    const [growthData, totalGrowth] = await Promise.all([
+      getViewsInRange(startDate, endDate, userEmail),
+      getTotalViewsGrowth(startDate, endDate, userEmail),
+    ]);
+    
+    setViewsGrowthData(growthData);
+    setTimestampMetrics(totalGrowth);
+    
+    console.log(`✅ Views growth: ${totalGrowth.totalViewsGrowth} views across ${totalGrowth.reelsCount} reels`);
+  };
 
   const fetchReels = async () => {
     console.log("📊 Analytics: Fetching all reels...");
@@ -234,6 +280,56 @@ const Analytics = () => {
   const previousReels = getPreviousPeriodReels();
   const metrics = calculateMetrics(filteredReels, previousReels);
 
+  // Prepare views growth chart data for timestamp-based analytics
+  const prepareViewsGrowthChartData = () => {
+    if (!viewsGrowthData.length) return [];
+    
+    // Group by date and calculate cumulative
+    const sortedData = [...viewsGrowthData].sort((a, b) => 
+      a.views_growth - b.views_growth
+    );
+    
+    let cumulative = 0;
+    return sortedData.map((item, index) => {
+      cumulative += item.views_growth;
+      return {
+        date: item.shortcode.slice(0, 8),
+        views_growth: item.views_growth,
+        likes_growth: item.likes_growth,
+        cumulative_views: cumulative,
+      };
+    });
+  };
+
+  // Calculate timestamp-based metrics for display
+  const getTimestampBasedMetrics = () => {
+    if (!timestampMetrics) return metrics;
+    
+    return [
+      {
+        title: "Views Growth",
+        value: `+${timestampMetrics.totalViewsGrowth.toLocaleString()}`,
+        change: 0,
+        icon: <TrendingUp className="h-4 w-4 text-chart-4" />,
+      },
+      {
+        title: "Likes Growth", 
+        value: `+${timestampMetrics.totalLikesGrowth.toLocaleString()}`,
+        change: 0,
+        icon: <Heart className="h-4 w-4 text-chart-2" />,
+      },
+      ...metrics.slice(2),
+    ];
+  };
+
+  const handleRefreshComplete = () => {
+    setLastRefreshTime(new Date());
+    fetchReels();
+    if (useTimestampAnalytics) {
+      fetchViewsGrowthData();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -248,17 +344,38 @@ const Analytics = () => {
                 Track your performance over time
               </p>
             </div>
-            <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
+            <div className="flex items-center gap-4">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="timestamp-mode"
+                  checked={useTimestampAnalytics}
+                  onCheckedChange={setUseTimestampAnalytics}
+                />
+                <Label htmlFor="timestamp-mode" className="text-sm">
+                  Timestamp-based Views
+                </Label>
+              </div>
+              <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
+            </div>
           </div>
 
           <Tabs defaultValue="team" className="space-y-6">
             <TabsList>
               <TabsTrigger value="team">Team Analytics</TabsTrigger>
               <TabsTrigger value="personal">Your Analytics</TabsTrigger>
+              <TabsTrigger value="refresh">Smart Refresh</TabsTrigger>
             </TabsList>
 
             <TabsContent value="team" className="space-y-6">
-              <PerformanceMetrics metrics={metrics} />
+              <PerformanceMetrics metrics={useTimestampAnalytics ? getTimestampBasedMetrics() : metrics} />
+              
+              {useTimestampAnalytics && (
+                <ViewsGrowthChart 
+                  data={prepareViewsGrowthChartData()}
+                  title="Views Growth (Timestamp-based)"
+                  description="Track views growth based on when data was updated, not posting date"
+                />
+              )}
               
               <TrendChart
                 data={chartData}
@@ -342,6 +459,23 @@ const Analytics = () => {
               </div>
               
               <PostingTimeHeatmap reels={userReels} title="Your Posting Time Heatmap" />
+            </TabsContent>
+
+            <TabsContent value="refresh" className="space-y-6">
+              <SmartRefreshPanel
+                totalReels={reels.length}
+                userEmail={userEmail}
+                lastRefreshTime={lastRefreshTime}
+                onRefreshComplete={handleRefreshComplete}
+              />
+              
+              {useTimestampAnalytics && (
+                <ViewsGrowthChart 
+                  data={prepareViewsGrowthChartData()}
+                  title="Views Growth After Refresh"
+                  description="See how views are growing based on your refresh updates"
+                />
+              )}
             </TabsContent>
           </Tabs>
         </div>
