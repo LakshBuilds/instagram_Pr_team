@@ -1,15 +1,12 @@
 // Internal API service for fetching Instagram data
-// This uses your custom scraper API instead of Apify
-
-// Cloudflare tunnel URL (used by the backend proxy server)
-const INTERNAL_API_URL = import.meta.env.VITE_INTERNAL_API_URL || "https://strips-ministries-informal-examining.trycloudflare.com";
+// This uses your custom scraper API with async polling to avoid 504 timeouts
 
 // Backend server URL for production (to avoid CORS)
-// In dev: uses Vite proxy, In prod: uses this URL
 const API_SERVER_URL = import.meta.env.VITE_API_SERVER_URL || "";
 
-// Rate limiting is now handled by the internal API server
-// No client-side rate limiting needed
+// Polling configuration
+const POLL_INTERVAL_MS = 3000; // 3 seconds between polls
+const MAX_POLL_ATTEMPTS = 60; // Max 3 minutes of polling
 
 // Internal API response format
 interface InternalApiResponse {
@@ -52,9 +49,22 @@ interface InternalApiResponse {
   filename: string | null;
 }
 
+interface AsyncJobResponse {
+  job_id: string;
+  status: string;
+  message?: string;
+}
+
+interface AsyncStatusResponse {
+  job_id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  result?: InternalApiResponse;
+  error?: string;
+  progress?: number;
+}
+
 /**
  * Extract video duration from the video URL's efg parameter
- * The efg parameter contains base64 encoded JSON with "duration_s" field
  */
 function extractVideoDurationFromUrl(videoUrl: string | null): number | null {
   if (!videoUrl) return null;
@@ -80,66 +90,142 @@ function extractVideoDurationFromUrl(videoUrl: string | null): number | null {
   return null;
 }
 
-// Rate limiting removed - handled by internal API server
-
-async function fetchFromInternalApiDirect(instagramUrl: string): Promise<InternalApiResponse> {
-  // Use Vite proxy in dev, backend server in prod (to avoid CORS)
-  // In dev: /api/internal/scrape -> Vite proxies to Cloudflare tunnel
-  // In prod: API_SERVER_URL/api/internal/scrape -> Express server proxies to Cloudflare tunnel
+/**
+ * Get the base API URL based on environment
+ */
+function getApiBaseUrl(): string {
   const isDev = import.meta.env.DEV;
-  
-  let apiUrl: string;
   if (isDev) {
-    // Development: use Vite proxy
-    apiUrl = '/api/internal/scrape';
-  } else if (API_SERVER_URL) {
-    // Production with backend server: use the server's proxy endpoint
-    apiUrl = `${API_SERVER_URL}/api/internal/scrape`;
-  } else {
-    // Fallback: direct call (will fail due to CORS in browser)
-    apiUrl = `${INTERNAL_API_URL}/scrape`;
+    return ''; // Use Vite proxy
   }
-  
-  console.log(`🌐 Fetching from internal API: ${instagramUrl}`);
-  console.log(`📡 API endpoint: ${apiUrl}?url=... (dev mode: ${isDev})`);
-  
-  try {
-    // API expects URL as query parameter
-    const fullUrl = `${apiUrl}?url=${encodeURIComponent(instagramUrl)}`;
-    
-    const response = await fetch(fullUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Internal API error: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    
-    if (!data.success) {
-      throw new Error(data.error || `Internal API returned error for ${instagramUrl}`);
-    }
-
-    return data;
-  } catch (error) {
-    if (error instanceof TypeError && error.message === 'Failed to fetch') {
-      const targetUrl = isDev ? 'Vite proxy -> ' + INTERNAL_API_URL : (API_SERVER_URL || INTERNAL_API_URL);
-      throw new Error(`❌ Cannot connect to API (${targetUrl}). The server may be down or unreachable.`);
-    }
-    throw error;
-  }
+  return API_SERVER_URL || '';
 }
 
+/**
+ * Submit async scrape job and poll for result
+ * This avoids 504 timeout by using async job processing
+ */
+async function fetchFromInternalApiAsync(
+  instagramUrl: string,
+  onProgress?: (status: string, progress?: number) => void
+): Promise<InternalApiResponse> {
+  const baseUrl = getApiBaseUrl();
+  
+  console.log(`🚀 Submitting async scrape job for: ${instagramUrl}`);
+  
+  // Step 1: Submit the job
+  const submitUrl = `${baseUrl}/api/async/scrape?url=${encodeURIComponent(instagramUrl)}`;
+  
+  const submitRes = await fetch(submitUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  
+  if (!submitRes.ok) {
+    const errorText = await submitRes.text();
+    throw new Error(`Failed to submit job: ${submitRes.status} - ${errorText}`);
+  }
+  
+  const jobData: AsyncJobResponse = await submitRes.json();
+  const jobId = jobData.job_id;
+  
+  console.log(`📋 Job submitted with ID: ${jobId}`);
+  onProgress?.('Job submitted, waiting for processing...', 0);
+  
+  // Step 2: Poll for result
+  let attempts = 0;
+  
+  while (attempts < MAX_POLL_ATTEMPTS) {
+    attempts++;
+    
+    // Wait before polling
+    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+    
+    const statusUrl = `${baseUrl}/api/async/status/${jobId}`;
+    const statusRes = await fetch(statusUrl);
+    
+    if (!statusRes.ok) {
+      console.warn(`⚠️ Status check failed (attempt ${attempts}), retrying...`);
+      continue;
+    }
+    
+    const status: AsyncStatusResponse = await statusRes.json();
+    
+    console.log(`📊 Job status: ${status.status} (attempt ${attempts}/${MAX_POLL_ATTEMPTS})`);
+    onProgress?.(status.status, status.progress);
+    
+    if (status.status === 'completed' && status.result) {
+      console.log(`✅ Job completed successfully!`);
+      return status.result;
+    }
+    
+    if (status.status === 'failed') {
+      throw new Error(status.error || 'Job failed without error message');
+    }
+    
+    // Continue polling for 'pending' or 'processing' status
+  }
+  
+  throw new Error(`Job timed out after ${MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000} seconds`);
+}
+
+/**
+ * Fallback to direct API call (for backwards compatibility)
+ */
+async function fetchFromInternalApiDirect(instagramUrl: string): Promise<InternalApiResponse> {
+  const baseUrl = getApiBaseUrl();
+  const apiUrl = `${baseUrl}/api/internal/scrape`;
+  
+  console.log(`🌐 Direct fetch from: ${instagramUrl}`);
+  
+  const fullUrl = `${apiUrl}?url=${encodeURIComponent(instagramUrl)}`;
+  
+  const response = await fetch(fullUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Internal API error: ${response.status} ${response.statusText} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  
+  if (!data.success) {
+    throw new Error(data.error || `Internal API returned error for ${instagramUrl}`);
+  }
+
+  return data;
+}
+
+/**
+ * Main function to fetch from internal API
+ * Uses async polling by default to avoid 504 timeouts
+ */
 export async function fetchFromInternalApi(
   instagramUrl: string,
-  priority: number = 0
+  options?: {
+    useAsync?: boolean;
+    onProgress?: (status: string, progress?: number) => void;
+  }
 ): Promise<InternalApiResponse> {
-  // Direct call - rate limiting handled by internal API server
+  const useAsync = options?.useAsync ?? true; // Default to async
+  
+  if (useAsync) {
+    try {
+      return await fetchFromInternalApiAsync(instagramUrl, options?.onProgress);
+    } catch (error) {
+      console.warn('⚠️ Async API failed, falling back to direct call:', error);
+      // Fallback to direct call if async fails
+      return fetchFromInternalApiDirect(instagramUrl);
+    }
+  }
+  
   return fetchFromInternalApiDirect(instagramUrl);
 }
 

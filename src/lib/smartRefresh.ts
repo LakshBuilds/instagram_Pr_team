@@ -24,7 +24,8 @@ export async function refreshSingleReel(
   reelId: string,
   shortcode: string,
   permalink: string,
-  userEmail: string
+  userEmail: string,
+  onProgress?: (status: string) => void
 ): Promise<RefreshResult> {
   try {
     const { data: currentReel } = await supabase
@@ -33,16 +34,19 @@ export async function refreshSingleReel(
       .eq('id', reelId)
       .single();
 
-    const oldViews = currentReel?.videoplaycount || currentReel?.videoviewcount || 0;
+    const oldViews = Number(currentReel?.videoplaycount || currentReel?.videoviewcount || 0);
 
     const url = permalink || `https://www.instagram.com/reel/${shortcode}/`;
-    const apiResponse = await fetchFromInternalApi(url);
+    
+    // Use async API with progress callback
+    const apiResponse = await fetchFromInternalApi(url, {
+      useAsync: true,
+      onProgress: (status) => onProgress?.(status),
+    });
+    
     const transformedData = transformInternalApiToReel(apiResponse, url);
 
     const newViews = transformedData.videoplaycount || transformedData.videoviewcount || 0;
-    const decayPriority = transformedData.takenat 
-      ? calculateDecayPriority(transformedData.takenat) 
-      : 50;
 
     const { error: updateError } = await supabase
       .from('reels')
@@ -51,8 +55,7 @@ export async function refreshSingleReel(
         videoviewcount: transformedData.videoviewcount,
         likescount: transformedData.likescount,
         commentscount: transformedData.commentscount,
-        decay_priority: decayPriority,
-        last_refresh_at: new Date().toISOString(),
+        last_refreshed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq('id', reelId);
@@ -105,7 +108,7 @@ export async function refreshSingleReel(
 export async function smartBatchRefresh(
   maxReels: number = 20,
   userEmail?: string,
-  onProgress?: (current: number, total: number, result: RefreshResult) => void
+  onProgress?: (current: number, total: number, result: RefreshResult, status?: string) => void
 ): Promise<BatchRefreshResult> {
   const reelsToRefresh = await getReelsForRefresh(maxReels, userEmail);
   
@@ -121,7 +124,8 @@ export async function smartBatchRefresh(
       reel.reel_id,
       reel.shortcode,
       reel.permalink || `https://www.instagram.com/reel/${reel.shortcode}/`,
-      userEmail || ''
+      userEmail || '',
+      (status) => onProgress?.(i + 1, reelsToRefresh.length, result, status)
     );
 
     results.push(result);
@@ -137,8 +141,9 @@ export async function smartBatchRefresh(
       onProgress(i + 1, reelsToRefresh.length, result);
     }
 
+    // Small delay between requests to avoid overwhelming the API
     if (i < reelsToRefresh.length - 1) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
 
