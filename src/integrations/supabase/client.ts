@@ -18,6 +18,9 @@ export const supabase = createClient<Database>(
       autoRefreshToken: true,
       detectSessionInUrl: true,
       flowType: "pkce",
+      // Disable navigator lock to prevent conflicts with Clerk
+      lock: "no-op",
+      debug: false,
     },
   }
 );
