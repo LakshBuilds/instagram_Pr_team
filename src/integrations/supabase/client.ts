@@ -16,11 +16,15 @@ export const supabase = createClient<Database>(
       storage: localStorage,
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true,
+      detectSessionInUrl: false, // Disable to prevent conflicts with Clerk
       flowType: "pkce",
-      // Disable navigator lock to prevent conflicts with Clerk
-      lock: "no-op",
-      debug: false,
+      // Custom lock implementation to avoid Navigator Lock conflicts
+      storageKey: "supabase-auth-token",
+    },
+    global: {
+      headers: {
+        'X-Client-Info': 'instagram-reels-analytics',
+      },
     },
   }
 );
