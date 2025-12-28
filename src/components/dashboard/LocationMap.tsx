@@ -90,7 +90,6 @@ const LOCATION_COORDINATES: { [key: string]: { lat: number; lng: number } } = {
   "Delhi दिल्ली": { lat: 28.6139, lng: 77.2090 },
   "Mumbai - मुंबई": { lat: 19.0760, lng: 72.8777 },
   "Bangalore, India": { lat: 12.9716, lng: 77.5946 },
-  "Chandigarh, India": { lat: 30.7333, lng: 76.7794 },
 };
 
 // Extract city/state from location string
