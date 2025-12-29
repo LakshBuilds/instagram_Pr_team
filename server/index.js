@@ -121,6 +121,125 @@ if (!INTERNAL_API_URL) {
 
 console.log('✅ Internal API URL loaded from .env:', INTERNAL_API_URL);
 
+// ============================================
+// ASYNC JOB QUEUE FOR AVOIDING 30s TIMEOUT
+// ============================================
+const jobQueue = new Map(); // jobId -> { status, result, error, createdAt }
+
+function generateJobId() {
+  return `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// Clean up old jobs (older than 10 minutes)
+setInterval(() => {
+  const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+  for (const [jobId, job] of jobQueue.entries()) {
+    if (job.createdAt < tenMinutesAgo) {
+      jobQueue.delete(jobId);
+      console.log(`🧹 Cleaned up old job: ${jobId}`);
+    }
+  }
+}, 60000); // Run every minute
+
+// Submit async scrape job - returns immediately with job ID
+app.post('/api/async/scrape', async (req, res) => {
+  try {
+    const url = req.query.url || req.body.url;
+    
+    if (!url) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'URL is required' 
+      });
+    }
+
+    const jobId = generateJobId();
+    
+    // Initialize job
+    jobQueue.set(jobId, {
+      status: 'pending',
+      result: null,
+      error: null,
+      createdAt: Date.now(),
+      url: url
+    });
+
+    console.log(`📋 Job ${jobId} created for URL: ${url}`);
+
+    // Start processing in background (don't await)
+    processJob(jobId, url);
+
+    // Return immediately with job ID
+    res.json({
+      success: true,
+      job_id: jobId,
+      status: 'pending',
+      message: 'Job submitted. Poll /api/async/status/:jobId for results.'
+    });
+  } catch (error) {
+    console.error('Error creating async job:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+// Process job in background
+async function processJob(jobId, url) {
+  const job = jobQueue.get(jobId);
+  if (!job) return;
+
+  job.status = 'processing';
+  console.log(`⚙️ Processing job ${jobId}...`);
+
+  try {
+    const response = await fetch(`${INTERNAL_API_URL}/scrape?url=${encodeURIComponent(url)}`);
+    
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Internal API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    
+    job.status = 'completed';
+    job.result = data;
+    console.log(`✅ Job ${jobId} completed successfully`);
+  } catch (error) {
+    job.status = 'failed';
+    job.error = error.message;
+    console.error(`❌ Job ${jobId} failed:`, error.message);
+  }
+}
+
+// Check job status
+app.get('/api/async/status/:jobId', (req, res) => {
+  const { jobId } = req.params;
+  const job = jobQueue.get(jobId);
+
+  if (!job) {
+    return res.status(404).json({
+      success: false,
+      error: 'Job not found'
+    });
+  }
+
+  const response = {
+    job_id: jobId,
+    status: job.status,
+    created_at: job.createdAt
+  };
+
+  if (job.status === 'completed') {
+    response.result = job.result;
+  } else if (job.status === 'failed') {
+    response.error = job.error;
+  }
+
+  res.json(response);
+});
+
 app.post('/api/internal/scrape', async (req, res) => {
   try {
     // Accept URL from query params OR body (frontend sends as query param)
