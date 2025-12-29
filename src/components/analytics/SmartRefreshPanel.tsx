@@ -137,6 +137,10 @@ const SmartRefreshPanel = ({
             <AlertCircle className="h-3 w-3" />
             Decay Priority: New reels (0-7 days) = 100, Old reels (90+ days) = 10
           </p>
+          <p className="flex items-center gap-1 mt-1">
+            <RefreshCw className="h-3 w-3" />
+            Single reel refresh is always available from the reels table
+          </p>
         </div>
       </CardContent>
     </Card>

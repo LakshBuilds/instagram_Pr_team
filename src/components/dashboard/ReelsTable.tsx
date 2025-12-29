@@ -256,13 +256,9 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
       console.log(`📊 Reel stats: views=${viewCount}, likes=${likesCount}, comments=${commentsCount}, shouldArchive=${shouldArchive}`);
       const shouldUnarchive = !shouldArchive;
 
-      if (viewCount && viewCount > 0) {
-        updateData.videoplaycount = viewCount;
-        updateData.videoviewcount = viewCount;
-      } else {
-        updateData.videoplaycount = 0;
-        updateData.videoviewcount = 0;
-      }
+      // Always update view counts, even if 0 - this ensures data accuracy
+      updateData.videoplaycount = viewCount;
+      updateData.videoviewcount = viewCount;
 
       if (typeof transformed.likescount === 'number') {
         updateData.likescount = transformed.likescount;
@@ -300,9 +296,10 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
       if (data && data.length > 0) {
         const reelData = data[0];
         const { error } = await supabase.from("reels").update({
-          videoplaycount: reelData.videoPlayCount || reelData.playCount || 0,
-          likescount: reelData.likesCount || 0,
-          commentscount: reelData.commentsCount || 0,
+          // Always update all fields, even if 0 - ensures data accuracy
+          videoplaycount: reelData.videoPlayCount ?? reelData.playCount ?? 0,
+          likescount: reelData.likesCount ?? 0,
+          commentscount: reelData.commentsCount ?? 0,
           lastupdatedat: new Date().toISOString(),
         }).eq("id", reel.id);
 

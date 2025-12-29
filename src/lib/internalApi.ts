@@ -205,7 +205,7 @@ async function fetchFromInternalApiDirect(instagramUrl: string): Promise<Interna
 
 /**
  * Main function to fetch from internal API
- * Uses async polling by default to avoid 504 timeouts
+ * Uses direct API call (async endpoints not deployed on server)
  */
 export async function fetchFromInternalApi(
   instagramUrl: string,
@@ -214,19 +214,11 @@ export async function fetchFromInternalApi(
     onProgress?: (status: string, progress?: number) => void;
   }
 ): Promise<InternalApiResponse> {
-  const useAsync = options?.useAsync ?? true; // Default to async
-  
-  if (useAsync) {
-    try {
-      return await fetchFromInternalApiAsync(instagramUrl, options?.onProgress);
-    } catch (error) {
-      console.warn('⚠️ Async API failed, falling back to direct call:', error);
-      // Fallback to direct call if async fails
-      return fetchFromInternalApiDirect(instagramUrl);
-    }
-  }
-  
-  return fetchFromInternalApiDirect(instagramUrl);
+  // Always use direct call - async endpoints are not available on the deployed server
+  options?.onProgress?.('Fetching data...', 50);
+  const result = await fetchFromInternalApiDirect(instagramUrl);
+  options?.onProgress?.('Complete', 100);
+  return result;
 }
 
 /**
