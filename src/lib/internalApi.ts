@@ -248,6 +248,11 @@ export function transformInternalApiToReel(data: InternalApiResponse, inputUrl: 
   
   const resolvedId = `shortcode_${apiData.shortcode}`;
   
+  // Use nullish coalescing to properly handle 0 values vs undefined/null
+  const likeCount = apiData.engagement.like_count ?? 0;
+  const commentCount = apiData.engagement.comment_count ?? 0;
+  const playCount = apiData.engagement.play_count ?? 0;
+  
   return {
     id: resolvedId,
     shortcode: apiData.shortcode,
@@ -255,10 +260,10 @@ export function transformInternalApiToReel(data: InternalApiResponse, inputUrl: 
     ownerfullname: apiData.user.full_name,
     ownerid: null,
     caption: apiData.caption || "",
-    likescount: apiData.engagement.like_count,
-    commentscount: apiData.engagement.comment_count,
-    videoviewcount: apiData.engagement.play_count,
-    videoplaycount: apiData.engagement.play_count,
+    likescount: likeCount,
+    commentscount: commentCount,
+    videoviewcount: playCount,
+    videoplaycount: playCount,
     timestamp: takenAt,
     takenat: takenAt,
     video_duration: videoDuration,

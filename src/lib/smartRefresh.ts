@@ -82,7 +82,8 @@ export async function refreshSingleReel(
       .eq('id', reelId)
       .single();
 
-    const oldViews = Number(currentReel?.videoplaycount || currentReel?.videoviewcount || 0);
+    // Use nullish coalescing (??) to properly handle 0 values
+    const oldViews = Number(currentReel?.videoplaycount ?? currentReel?.videoviewcount ?? 0);
 
     const url = permalink || `https://www.instagram.com/reel/${shortcode}/`;
     
