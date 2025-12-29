@@ -97,6 +97,28 @@ export async function refreshSingleReel(
 
     // Use nullish coalescing (??) to properly handle 0 values
     const newViews = transformedData.videoplaycount ?? transformedData.videoviewcount ?? 0;
+    const newLikes = transformedData.likescount ?? 0;
+    const newComments = transformedData.commentscount ?? 0;
+
+    // PROTECTION: Don't update to 0 if we had data before and API returned nothing
+    // This prevents data loss from API failures
+    const apiReturnedNoData = newViews === 0 && newLikes === 0 && newComments === 0;
+    const hadDataBefore = oldViews > 0;
+    
+    if (apiReturnedNoData && hadDataBefore) {
+      console.warn(`⚠️ API returned 0 for all metrics but reel had ${oldViews} views - skipping update to prevent data loss`);
+      return {
+        success: false,
+        reelId,
+        shortcode,
+        oldViews,
+        newViews: oldViews, // Keep old views
+        viewsGrowth: 0,
+        error: 'API returned empty data - keeping existing values',
+        retryable: true,
+        timestamp: refreshTimestamp,
+      };
+    }
 
     const { error: updateError } = await supabase
       .from('reels')

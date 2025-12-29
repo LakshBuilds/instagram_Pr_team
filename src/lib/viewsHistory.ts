@@ -92,7 +92,10 @@ export async function recordViewsSnapshot(
 }
 
 /**
- * Get reels that need refresh based on decay priority
+ * Get reels that need refresh based on priority
+ * PRIORITY ORDER:
+ * 1. Reels with 0 views (highest priority - need data)
+ * 2. Reels based on decay priority and time since last refresh
  */
 export async function getReelsForRefresh(
   maxReels: number = 50,
@@ -101,14 +104,14 @@ export async function getReelsForRefresh(
   try {
     let query = supabase
       .from('reels')
-      .select('id, shortcode, ownerusername, decay_priority, last_refresh_at, takenat, permalink')
+      .select('id, shortcode, ownerusername, decay_priority, last_refresh_at, takenat, permalink, videoplaycount, videoviewcount')
       .not('shortcode', 'is', null);
 
     if (userEmail) {
       query = query.eq('created_by_email', userEmail);
     }
 
-    const { data: reels, error } = await query.limit(maxReels * 2);
+    const { data: reels, error } = await query.limit(maxReels * 3);
     if (error || !reels) return [];
 
     const now = new Date();
@@ -120,6 +123,16 @@ export async function getReelsForRefresh(
         : new Date(reel.takenat || now);
       const daysSinceRefresh = (now.getTime() - lastRefresh.getTime()) / 86400000;
       
+      // Check if reel has 0 views - these get HIGHEST priority
+      const currentViews = reel.videoplaycount ?? reel.videoviewcount ?? 0;
+      const hasZeroViews = currentViews === 0;
+      
+      // Score calculation:
+      // - Reels with 0 views get a massive boost (10000 base score)
+      // - Otherwise use decay priority * days since refresh
+      const baseScore = hasZeroViews ? 10000 : 0;
+      const regularScore = decayPriority * daysSinceRefresh;
+      
       return {
         reel_id: reel.id,
         shortcode: reel.shortcode!,
@@ -128,14 +141,16 @@ export async function getReelsForRefresh(
         last_refresh_at: reel.last_refresh_at,
         days_since_refresh: daysSinceRefresh,
         permalink: reel.permalink,
-        score: decayPriority * daysSinceRefresh,
+        hasZeroViews,
+        score: baseScore + regularScore,
       };
     });
 
+    // Sort by score (0 views reels first, then by regular priority)
     return reelsWithPriority
       .sort((a, b) => b.score - a.score)
       .slice(0, maxReels)
-      .map(({ score, ...rest }) => rest);
+      .map(({ score, hasZeroViews, ...rest }) => rest);
   } catch (err) {
     console.error('Error getting reels for refresh:', err);
     return [];

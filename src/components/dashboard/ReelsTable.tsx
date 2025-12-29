@@ -236,6 +236,9 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
     }
 
     const provider = getApiProvider();
+    
+    // Get current views to protect against API failures
+    const currentViews = reel.videoplaycount ?? reel.videoviewcount ?? 0;
 
     if (provider === 'internal') {
       const response = await fetchFromInternalApi(url, 5);
@@ -249,6 +252,16 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
       const viewCount = transformed.videoplaycount ?? transformed.videoviewcount ?? 0;
       const likesCount = transformed.likescount ?? 0;
       const commentsCount = transformed.commentscount ?? 0;
+
+      // PROTECTION: Don't update to 0 if we had data before and API returned nothing
+      // This prevents data loss from API failures
+      const apiReturnedNoData = viewCount === 0 && likesCount === 0 && commentsCount === 0;
+      const hadDataBefore = currentViews > 0;
+      
+      if (apiReturnedNoData && hadDataBefore) {
+        console.warn(`⚠️ API returned 0 for all metrics but reel had ${currentViews} views - skipping update to prevent data loss`);
+        throw new Error('API returned empty data - keeping existing values to prevent data loss');
+      }
 
       // Archive if ALL metrics are 0 (reel likely deleted/unavailable on Instagram)
       const shouldArchive = viewCount === 0 && likesCount === 0 && commentsCount === 0;
@@ -295,11 +308,23 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
 
       if (data && data.length > 0) {
         const reelData = data[0];
+        const newViewCount = reelData.videoPlayCount ?? reelData.playCount ?? 0;
+        const newLikesCount = reelData.likesCount ?? 0;
+        const newCommentsCount = reelData.commentsCount ?? 0;
+        
+        // PROTECTION: Don't update to 0 if we had data before and API returned nothing
+        const apiReturnedNoData = newViewCount === 0 && newLikesCount === 0 && newCommentsCount === 0;
+        const hadDataBefore = currentViews > 0;
+        
+        if (apiReturnedNoData && hadDataBefore) {
+          console.warn(`⚠️ Apify API returned 0 for all metrics but reel had ${currentViews} views - skipping update`);
+          throw new Error('API returned empty data - keeping existing values to prevent data loss');
+        }
+        
         const { error } = await supabase.from("reels").update({
-          // Always update all fields, even if 0 - ensures data accuracy
-          videoplaycount: reelData.videoPlayCount ?? reelData.playCount ?? 0,
-          likescount: reelData.likesCount ?? 0,
-          commentscount: reelData.commentsCount ?? 0,
+          videoplaycount: newViewCount,
+          likescount: newLikesCount,
+          commentscount: newCommentsCount,
           lastupdatedat: new Date().toISOString(),
         }).eq("id", reel.id);
 
