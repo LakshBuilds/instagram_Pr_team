@@ -284,16 +284,16 @@ const Analytics = () => {
   const prepareViewsGrowthChartData = () => {
     if (!viewsGrowthData.length) return [];
     
-    // Group by date and calculate cumulative
+    // Sort by views growth descending to show best performers
     const sortedData = [...viewsGrowthData].sort((a, b) => 
-      a.views_growth - b.views_growth
+      b.views_growth - a.views_growth
     );
     
     let cumulative = 0;
-    return sortedData.map((item, index) => {
+    return sortedData.map((item) => {
       cumulative += item.views_growth;
       return {
-        date: item.shortcode.slice(0, 8),
+        date: `@${item.ownerusername || item.shortcode.slice(0, 6)}`,
         views_growth: item.views_growth,
         likes_growth: item.likes_growth,
         cumulative_views: cumulative,

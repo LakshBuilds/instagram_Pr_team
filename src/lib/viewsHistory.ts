@@ -162,6 +162,7 @@ export async function getReelsForRefresh(
 
 /**
  * Get views growth data for reels in a date range
+ * This fetches snapshots recorded within the date range
  */
 export async function getViewsInRange(
   startDate: Date,
@@ -169,60 +170,77 @@ export async function getViewsInRange(
   userEmail?: string
 ): Promise<ViewsGrowth[]> {
   try {
-    // Get snapshots at start of range
-    const { data: startSnapshots } = await supabase
+    console.log(`📊 Fetching views history from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+    
+    // Get all snapshots in the date range
+    const { data: snapshots, error } = await supabase
       .from('views_history')
-      .select('reel_id, videoplaycount, likescount')
-      .lte('recorded_at', startDate.toISOString())
-      .order('recorded_at', { ascending: false });
-
-    // Get snapshots at end of range
-    const { data: endSnapshots } = await supabase
-      .from('views_history')
-      .select('reel_id, videoplaycount, likescount, shortcode, ownerusername')
+      .select('reel_id, videoplaycount, likescount, shortcode, ownerusername, recorded_at')
+      .gte('recorded_at', startDate.toISOString())
       .lte('recorded_at', endDate.toISOString())
-      .order('recorded_at', { ascending: false });
+      .order('recorded_at', { ascending: true });
 
-    if (!endSnapshots) return [];
+    if (error) {
+      console.error('Error fetching views history:', error);
+      return [];
+    }
 
-    // Group by reel_id and get latest snapshot for each
-    const startMap = new Map<string, { views: number; likes: number }>();
-    const endMap = new Map<string, { views: number; likes: number; shortcode: string; ownerusername: string | null }>();
+    if (!snapshots || snapshots.length === 0) {
+      console.log('📊 No views history snapshots found in date range');
+      return [];
+    }
 
-    startSnapshots?.forEach(s => {
-      if (!startMap.has(s.reel_id)) {
-        startMap.set(s.reel_id, { views: s.videoplaycount || 0, likes: s.likescount || 0 });
-      }
-    });
+    console.log(`📊 Found ${snapshots.length} snapshots in date range`);
 
-    endSnapshots.forEach(s => {
-      if (!endMap.has(s.reel_id)) {
-        endMap.set(s.reel_id, { 
-          views: s.videoplaycount || 0, 
-          likes: s.likescount || 0,
+    // Group snapshots by reel_id and calculate growth
+    const reelSnapshots = new Map<string, { 
+      first: { views: number; likes: number; recorded_at: string };
+      last: { views: number; likes: number; recorded_at: string };
+      shortcode: string;
+      ownerusername: string | null;
+    }>();
+
+    snapshots.forEach(s => {
+      const existing = reelSnapshots.get(s.reel_id);
+      const snapshot = { 
+        views: s.videoplaycount || 0, 
+        likes: s.likescount || 0,
+        recorded_at: s.recorded_at
+      };
+      
+      if (!existing) {
+        reelSnapshots.set(s.reel_id, {
+          first: snapshot,
+          last: snapshot,
           shortcode: s.shortcode,
           ownerusername: s.ownerusername,
         });
+      } else {
+        // Update last snapshot (since we ordered by ascending)
+        existing.last = snapshot;
       }
     });
 
-    // Calculate growth
+    // Calculate growth for each reel
     const results: ViewsGrowth[] = [];
-    endMap.forEach((endData, reelId) => {
-      const startData = startMap.get(reelId) || { views: 0, likes: 0 };
+    reelSnapshots.forEach((data, reelId) => {
+      const viewsGrowth = data.last.views - data.first.views;
+      const likesGrowth = data.last.likes - data.first.likes;
+      
       results.push({
         reel_id: reelId,
-        shortcode: endData.shortcode,
-        ownerusername: endData.ownerusername,
-        views_at_start: startData.views,
-        views_at_end: endData.views,
-        views_growth: endData.views - startData.views,
-        likes_at_start: startData.likes,
-        likes_at_end: endData.likes,
-        likes_growth: endData.likes - startData.likes,
+        shortcode: data.shortcode,
+        ownerusername: data.ownerusername,
+        views_at_start: data.first.views,
+        views_at_end: data.last.views,
+        views_growth: viewsGrowth,
+        likes_at_start: data.first.likes,
+        likes_at_end: data.last.likes,
+        likes_growth: likesGrowth,
       });
     });
 
+    console.log(`📊 Calculated growth for ${results.length} reels`);
     return results;
   } catch (err) {
     console.error('❌ Error getting views in range:', err);
