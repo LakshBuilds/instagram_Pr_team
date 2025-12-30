@@ -147,6 +147,9 @@ export async function getReelsForRefresh(
     });
 
     // Sort by score (0 views reels first, then by regular priority)
+    const zeroViewsCount = reelsWithPriority.filter(r => r.hasZeroViews).length;
+    console.log(`📊 Found ${zeroViewsCount} reels with 0 views (will be refreshed first)`);
+    
     return reelsWithPriority
       .sort((a, b) => b.score - a.score)
       .slice(0, maxReels)

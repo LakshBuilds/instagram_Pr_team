@@ -162,7 +162,12 @@ async function fetchFromInternalApiAsync(
     }
     
     if (status.status === 'failed') {
-      throw new Error(status.error || 'Job failed without error message');
+      // Check if it's a Cloudflare timeout error
+      const errorMsg = status.error || 'Job failed without error message';
+      if (errorMsg.includes('524') || errorMsg.includes('timeout')) {
+        throw new Error('Instagram scraper is taking too long. The Cloudflare tunnel timed out. Please try again in a few minutes or restart the tunnel.');
+      }
+      throw new Error(errorMsg);
     }
     
     // Continue polling for 'pending' or 'processing' status

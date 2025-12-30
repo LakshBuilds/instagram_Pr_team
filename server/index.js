@@ -185,7 +185,7 @@ app.post('/api/async/scrape', async (req, res) => {
   }
 });
 
-// Process job in background
+// Process job in background with retry logic
 async function processJob(jobId, url) {
   const job = jobQueue.get(jobId);
   if (!job) return;
@@ -193,23 +193,62 @@ async function processJob(jobId, url) {
   job.status = 'processing';
   console.log(`⚙️ Processing job ${jobId}...`);
 
-  try {
-    const response = await fetch(`${INTERNAL_API_URL}/scrape?url=${encodeURIComponent(url)}`);
-    
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => 'Unknown error');
-      throw new Error(`Internal API error: ${response.status} - ${errorText}`);
-    }
+  const MAX_RETRIES = 2; // Reduced retries since each attempt takes 90s
+  const RETRY_DELAY_MS = 3000; // 3 seconds between retries
 
-    const data = await response.json();
-    
-    job.status = 'completed';
-    job.result = data;
-    console.log(`✅ Job ${jobId} completed successfully`);
-  } catch (error) {
-    job.status = 'failed';
-    job.error = error.message;
-    console.error(`❌ Job ${jobId} failed:`, error.message);
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`🔄 Attempt ${attempt}/${MAX_RETRIES} for job ${jobId}`);
+      
+      // Add timeout - 95s (just under Cloudflare's 100s limit)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 95000);
+      
+      const response = await fetch(`${INTERNAL_API_URL}/scrape?url=${encodeURIComponent(url)}`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        // Check if it's a Cloudflare 524 error
+        if (response.status === 524 || errorText.includes('524') || errorText.includes('timeout occurred')) {
+          throw new Error('Cloudflare timeout (524) - Python scraper is too slow');
+        }
+        throw new Error(`Internal API error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      
+      job.status = 'completed';
+      job.result = data;
+      console.log(`✅ Job ${jobId} completed successfully on attempt ${attempt}`);
+      return; // Success - exit the retry loop
+      
+    } catch (error) {
+      const isTimeout = error.name === 'AbortError' || error.message?.includes('timeout');
+      const isCloudflareError = error.message?.includes('524') || error.message?.includes('timeout occurred');
+      
+      console.error(`❌ Job ${jobId} attempt ${attempt} failed:`, error.message);
+      
+      if (attempt < MAX_RETRIES && (isTimeout || isCloudflareError)) {
+        console.log(`⏳ Cloudflare timeout detected. Retrying in ${RETRY_DELAY_MS/1000}s...`);
+        job.status = 'retrying';
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+        job.status = 'processing';
+      } else {
+        job.status = 'failed';
+        // Provide user-friendly error message
+        if (isTimeout || isCloudflareError) {
+          job.error = 'Instagram scraper timed out. The Python API is taking too long (>100s). Please restart the Cloudflare tunnel or check the scraper.';
+        } else {
+          job.error = error.message;
+        }
+        console.error(`❌ Job ${jobId} failed after ${attempt} attempts:`, job.error);
+        return;
+      }
+    }
   }
 }
 
