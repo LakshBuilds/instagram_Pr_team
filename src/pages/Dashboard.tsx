@@ -8,6 +8,7 @@ import LocationMap from "@/components/dashboard/LocationMap";
 import ProgressTracker from "@/components/dashboard/ProgressTracker";
 import StreakCounter from "@/components/dashboard/StreakCounter";
 import AchievementsSection from "@/components/dashboard/AchievementsSection";
+import WeeklySummary from "@/components/dashboard/WeeklySummary";
 import { calculateStreakData } from "@/lib/streakCalculator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,8 @@ interface Reel {
   likescount: number | null;
   commentscount: number | null;
   videoplaycount: number | null;
-  videoviewcount?: number | null; // Keep for database compatibility, but use videoplaycount for display
+  videoviewcount?: number | null;
+  videowatchcount?: number | null;
   payout: number | null;
   permalink: string | null;
   takenat: string | null;
@@ -57,6 +59,7 @@ const Dashboard = () => {
   const { user, isLoaded } = useUser();
   const [yourReels, setYourReels] = useState<Reel[]>([]);
   const [allReels, setAllReels] = useState<Reel[]>([]);
+  const [globalReels, setGlobalReels] = useState<Reel[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [apiKey, setApiKey] = useState<string>("");
@@ -97,70 +100,53 @@ const Dashboard = () => {
     }
   }, [selectedLanguage, selectedLocation, user]);
 
+  // Supabase returns max 1000 rows per request; paginate to get all rows
+  const PAGE_SIZE = 1000;
+  const fetchAllPages = async (buildQuery: () => any): Promise<Reel[]> => {
+    let from = 0;
+    const all: Reel[] = [];
+    while (true) {
+      const { data, error } = await buildQuery().range(from, from + PAGE_SIZE - 1);
+      if (error) return all;
+      if (!data?.length) break;
+      all.push(...data);
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+    return all;
+  };
+
   const fetchReels = async (userEmail: string) => {
     try {
       console.log("🔍 Fetching reels for user email:", userEmail);
       
-      // Build query for user's own reels by email
-      let userReelsQuery = supabase
-        .from("reels")
-        .select("*")
-        .eq("created_by_email", userEmail);
-      
-      console.log("📧 Querying reels where created_by_email =", userEmail);
+      const buildUserQuery = () => {
+        let q: any = supabase.from("reels").select("*").eq("created_by_email", userEmail);
+        if (selectedLanguage !== "All") q = q.eq("language", selectedLanguage);
+        if (selectedLocation !== "All") q = q.ilike("locationname", `%${selectedLocation}%`);
+        return q.order("takenat", { ascending: false });
+      };
+      const buildTeamQuery = () => {
+        let q: any = supabase.from("reels").select("*");
+        if (selectedLanguage !== "All") q = q.eq("language", selectedLanguage);
+        if (selectedLocation !== "All") q = q.ilike("locationname", `%${selectedLocation}%`);
+        return q.order("takenat", { ascending: false });
+      };
+      const buildGlobalQuery = () => supabase.from("reels").select("*").order("takenat", { ascending: false });
 
-      // Build query for all team reels
-      let teamReelsQuery = supabase
-        .from("reels")
-        .select("*");
+      const [userReels, teamReels, globalReelsData] = await Promise.all([
+        fetchAllPages(buildUserQuery),
+        fetchAllPages(buildTeamQuery),
+        fetchAllPages(buildGlobalQuery),
+      ]);
 
-      // Apply language filter if not "All"
-      if (selectedLanguage !== "All") {
-        userReelsQuery = (userReelsQuery as any).eq("language", selectedLanguage);
-        teamReelsQuery = (teamReelsQuery as any).eq("language", selectedLanguage);
-      }
-
-      // Apply location filter if not "All"
-      if (selectedLocation !== "All") {
-        userReelsQuery = (userReelsQuery as any).ilike("locationname", `%${selectedLocation}%`);
-        teamReelsQuery = (teamReelsQuery as any).ilike("locationname", `%${selectedLocation}%`);
-      }
-
-      // Execute queries
-      const { data: userReels, error: userError } = await (userReelsQuery as any).order("takenat", { ascending: false });
-      const { data: teamReels, error: teamError } = await (teamReelsQuery as any).order("takenat", { ascending: false });
-
-      if (userError) {
-        console.log("Note: User reels query returned error (may be RLS or empty):", userError.message);
-        // Don't throw - continue with empty array
-      }
-      if (teamError) {
-        console.log("Note: Team reels query returned error (may be RLS or empty):", teamError.message);
-        // Don't throw - continue with empty array
-      }
-
-      console.log("✅ User reels found:", userReels?.length || 0);
-      console.log("✅ Team reels found:", teamReels?.length || 0);
-      
-      if (userReels && userReels.length > 0) {
-        console.log("📋 Sample user reels:", userReels.slice(0, 2).map(r => ({
-          id: r.id,
-          email: r.created_by_email,
-          caption: r.caption?.substring(0, 50)
-        })));
-      }
-      
-      if (teamReels && teamReels.length > 0) {
-        console.log("📋 Sample team reels:", teamReels.slice(0, 2).map(r => ({
-          id: r.id,
-          email: r.created_by_email,
-          caption: r.caption?.substring(0, 50)
-        })));
-      }
-
-      console.log("💾 Setting state - yourReels:", userReels?.length || 0, "allReels:", teamReels?.length || 0);
-      setYourReels(userReels || []);
-      setAllReels(teamReels || []);
+      console.log("✅ User reels found:", userReels.length);
+      console.log("✅ Team reels found:", teamReels.length);
+      console.log("✅ Global reels found:", globalReelsData.length);
+      console.log("💾 Setting state - yourReels:", userReels.length, "allReels:", teamReels.length, "globalReels:", globalReelsData.length);
+      setYourReels(userReels);
+      setAllReels(teamReels);
+      setGlobalReels(globalReelsData);
       
       // Fetch failed reels count
       const countQuery = supabase
@@ -174,22 +160,34 @@ const Dashboard = () => {
     }
   };
 
+  const getReelViews = (reel: Reel): number => {
+    // For totals, use ONLY videoplaycount so it matches:
+    // SELECT SUM(videoplaycount) FROM public.reels;
+    return Number(reel.videoplaycount) || 0;
+  };
+
   const calculateStats = (reels: Reel[]) => {
-    // Deduplicate reels by shortcode to avoid counting duplicates
-    const uniqueReels = reels.filter((reel, index, self) => 
-      index === self.findIndex(r => (r.shortcode || r.id) === (reel.shortcode || reel.id))
-    );
+    // Deduplicate reels by shortcode — keep the entry with the highest view count
+    const bestByKey = new Map<string, Reel>();
+    for (const reel of reels) {
+      const key = reel.shortcode || reel.id;
+      const existing = bestByKey.get(key);
+      if (!existing || getReelViews(reel) > getReelViews(existing)) {
+        bestByKey.set(key, reel);
+      }
+    }
+    const uniqueReels = Array.from(bestByKey.values());
     
     return {
       totalReels: uniqueReels.length,
-      totalLikes: uniqueReels.reduce((sum, reel) => sum + (reel.likescount || 0), 0),
+      totalLikes: uniqueReels.reduce((sum, reel) => sum + (Number(reel.likescount) || 0), 0),
       totalComments: uniqueReels.reduce((sum, reel) => {
         const comments = typeof reel.commentscount === 'string' 
           ? parseInt(reel.commentscount || '0', 10) 
-          : (reel.commentscount || 0);
+          : (Number(reel.commentscount) || 0);
         return sum + comments;
       }, 0),
-      totalViews: uniqueReels.reduce((sum, reel) => sum + (reel.videoplaycount || 0), 0),
+      totalViews: uniqueReels.reduce((sum, reel) => sum + getReelViews(reel), 0),
       totalPayout: uniqueReels.reduce((sum, reel) => sum + (parseFloat(String(reel.payout)) || 0), 0),
     };
   };
@@ -458,6 +456,7 @@ const Dashboard = () => {
 
   const yourStats = calculateStats(yourReels);
   const allStats = calculateStats(allReels);
+  const globalStats = calculateStats(globalReels.length > 0 ? globalReels : allReels);
   
   // Calculate streak data for the current user
   const userEmail = user?.primaryEmailAddress?.emailAddress;
@@ -506,7 +505,7 @@ const Dashboard = () => {
           <TabsContent value="your-reels" className="space-y-6">
             <ProgressTracker 
               yourViews={yourStats.totalViews} 
-              teamViews={allStats.totalViews} 
+              teamViews={globalStats.totalViews} 
               variant="your-reels" 
             />
             <AchievementsSection reels={yourReels} userEmail={userEmail} />
@@ -528,7 +527,7 @@ const Dashboard = () => {
           <TabsContent value="team-reels" className="space-y-6">
             <ProgressTracker 
               yourViews={yourStats.totalViews} 
-              teamViews={allStats.totalViews} 
+              teamViews={globalStats.totalViews} 
               variant="team-reels" 
             />
             <div className="flex items-center justify-between gap-4">
@@ -708,7 +707,14 @@ const Dashboard = () => {
                 </div>
               </CardContent>
             </Card>
-            
+
+            <WeeklySummary
+              totalViews={globalStats.totalViews}
+              totalReels={globalStats.totalReels}
+              totalLikes={globalStats.totalLikes}
+              totalComments={globalStats.totalComments}
+              totalPayout={globalStats.totalPayout}
+            />
             <StatsCards {...allStats} />
             {viewMode === "map" ? (
               <LocationMap 

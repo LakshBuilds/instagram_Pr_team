@@ -200,6 +200,39 @@ export type Database = {
         }
         Relationships: []
       }
+      weekly_snapshots: {
+        Row: {
+          id: string
+          week_start_date: string
+          total_views: number
+          total_reels: number
+          total_likes: number
+          total_comments: number
+          total_payout: number | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          week_start_date: string
+          total_views?: number
+          total_reels?: number
+          total_likes?: number
+          total_comments?: number
+          total_payout?: number | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          week_start_date?: string
+          total_views?: number
+          total_reels?: number
+          total_likes?: number
+          total_comments?: number
+          total_payout?: number | null
+          created_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

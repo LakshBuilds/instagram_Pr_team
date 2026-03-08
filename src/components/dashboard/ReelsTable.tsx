@@ -30,7 +30,8 @@ interface Reel {
   likescount: number | null;
   commentscount: number | null;
   videoplaycount: number | null;
-  videoviewcount?: number | null; // Keep for database compatibility, but use videoplaycount for display
+  videoviewcount?: number | null;
+  videowatchcount?: number | null;
   payout: number | null;
   permalink: string | null;
   takenat: string | null;
@@ -590,7 +591,9 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                 </TableCell>
                 <TableCell className="text-right">{reel.likescount?.toLocaleString() || 0}</TableCell>
                 <TableCell className="text-right">{reel.commentscount?.toLocaleString() || 0}</TableCell>
-                <TableCell className="text-right">{reel.videoplaycount?.toLocaleString() || 0}</TableCell>
+                <TableCell className="text-right">
+                  {(Number(reel.videoplaycount) || 0).toLocaleString()}
+                </TableCell>
                 <TableCell className="text-right">
                   {editingId === reel.id ? (
                     <div className="flex items-center justify-end gap-1">
