@@ -17,8 +17,8 @@ All colors MUST be HSL.
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
 
-    /* Instagram gradient colors */
-    --primary: 291 64% 42%;
+    /* YouTube theme colors */
+    --primary: 0 100% 50%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 210 40% 96.1%;
@@ -27,7 +27,7 @@ All colors MUST be HSL.
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
 
-    --accent: 340 82% 52%;
+    --accent: 0 0% 7%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84.2% 60.2%;
@@ -35,19 +35,19 @@ All colors MUST be HSL.
 
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 291 64% 42%;
+    --ring: 0 100% 50%;
 
     --radius: 0.75rem;
 
-    /* Instagram gradient */
-    --gradient-instagram: linear-gradient(135deg, hsl(291, 64%, 42%) 0%, hsl(340, 82%, 52%) 50%, hsl(24, 95%, 53%) 100%);
+    /* YouTube gradient */
+    --gradient-youtube: linear-gradient(135deg, hsl(0, 100%, 50%) 0%, hsl(0, 85%, 40%) 50%, hsl(0, 70%, 30%) 100%);
     
     /* Chart colors */
-    --chart-1: 291 64% 42%;
-    --chart-2: 340 82% 52%;
-    --chart-3: 24 95% 53%;
-    --chart-4: 142 76% 36%;
-    --chart-5: 217 91% 60%;
+    --chart-1: 0 100% 50%;
+    --chart-2: 217 91% 60%;
+    --chart-3: 142 76% 36%;
+    --chart-4: 24 95% 53%;
+    --chart-5: 291 64% 42%;
   }
 
   .dark {
@@ -60,7 +60,7 @@ All colors MUST be HSL.
     --popover: 240 10% 3.9%;
     --popover-foreground: 0 0% 98%;
 
-    --primary: 291 64% 42%;
+    --primary: 0 100% 50%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 240 3.7% 15.9%;
@@ -69,7 +69,7 @@ All colors MUST be HSL.
     --muted: 240 3.7% 15.9%;
     --muted-foreground: 240 5% 64.9%;
 
-    --accent: 340 82% 52%;
+    --accent: 0 0% 7%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 62.8% 30.6%;
@@ -77,13 +77,13 @@ All colors MUST be HSL.
 
     --border: 240 3.7% 15.9%;
     --input: 240 3.7% 15.9%;
-    --ring: 291 64% 42%;
+    --ring: 0 100% 50%;
 
-    --chart-1: 291 64% 42%;
-    --chart-2: 340 82% 52%;
-    --chart-3: 24 95% 53%;
-    --chart-4: 142 76% 36%;
-    --chart-5: 217 91% 60%;
+    --chart-1: 0 100% 50%;
+    --chart-2: 217 91% 60%;
+    --chart-3: 142 76% 36%;
+    --chart-4: 24 95% 53%;
+    --chart-5: 291 64% 42%;
   }
 }
 

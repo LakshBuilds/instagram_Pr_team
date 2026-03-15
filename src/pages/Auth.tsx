@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { toast } from "sonner";
 import { signUp, signIn } from "@/lib/supabase";
 import { supabase } from "@/integrations/supabase/client";
-import { Instagram } from "lucide-react";
+import { Youtube } from "lucide-react";
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -56,15 +56,15 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-instagram p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-youtube p-4">
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="space-y-4 text-center">
           <div className="flex justify-center">
-            <div className="w-16 h-16 bg-gradient-instagram rounded-2xl flex items-center justify-center">
-              <Instagram className="w-10 h-10 text-white" />
+            <div className="w-16 h-16 bg-gradient-youtube rounded-2xl flex items-center justify-center">
+              <Youtube className="w-10 h-10 text-white" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold">Instagram Creators</CardTitle>
+          <CardTitle className="text-2xl font-bold">YouTube Creators</CardTitle>
           <CardDescription>
             {isLogin ? "Sign in to your account" : "Create your account"}
           </CardDescription>
@@ -108,7 +108,7 @@ const Auth = () => {
             </div>
             <Button
               type="submit"
-              className="w-full bg-gradient-instagram hover:opacity-90"
+              className="w-full bg-gradient-youtube hover:opacity-90"
               disabled={loading}
             >
               {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}

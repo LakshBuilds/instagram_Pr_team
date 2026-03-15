@@ -4,7 +4,7 @@ export interface WeeklySnapshotRow {
   id: string;
   week_start_date: string;
   total_views: number;
-  total_reels: number;
+  total_videos: number;
   total_likes: number;
   total_comments: number;
   total_payout: number | null;
@@ -27,7 +27,7 @@ export function getWeekStart(date: Date = new Date()): string {
  */
 export async function saveWeeklySnapshot(stats: {
   totalViews: number;
-  totalReels: number;
+  totalVideos: number;
   totalLikes: number;
   totalComments: number;
   totalPayout: number;
@@ -38,7 +38,7 @@ export async function saveWeeklySnapshot(stats: {
       {
         week_start_date: weekStart,
         total_views: stats.totalViews,
-        total_reels: stats.totalReels,
+        total_videos: stats.totalVideos,
         total_likes: stats.totalLikes,
         total_comments: stats.totalComments,
         total_payout: stats.totalPayout,

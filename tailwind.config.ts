@@ -56,7 +56,7 @@ export default {
         },
       },
       backgroundImage: {
-        'gradient-instagram': 'var(--gradient-instagram)',
+        'gradient-youtube': 'var(--gradient-youtube)',
       },
       borderRadius: {
         lg: "var(--radius)",

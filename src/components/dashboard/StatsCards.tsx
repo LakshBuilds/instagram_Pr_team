@@ -2,16 +2,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp, Heart, MessageSquare, Eye, DollarSign } from "lucide-react";
 
 interface StatsCardsProps {
-  totalReels: number;
+  totalVideos: number;
   totalLikes: number;
   totalComments: number;
   totalViews: number;
   totalPayout: number;
 }
 
-const StatsCards = ({ totalReels, totalLikes, totalComments, totalViews, totalPayout }: StatsCardsProps) => {
+const StatsCards = ({ totalVideos, totalLikes, totalComments, totalViews, totalPayout }: StatsCardsProps) => {
   const stats = [
-    { title: "Total Reels", value: totalReels.toLocaleString(), icon: TrendingUp, color: "text-chart-1" },
+    { title: "Total Videos", value: totalVideos.toLocaleString(), icon: TrendingUp, color: "text-chart-1" },
     { title: "Total Likes", value: totalLikes.toLocaleString(), icon: Heart, color: "text-chart-2" },
     { title: "Total Comments", value: totalComments.toLocaleString(), icon: MessageSquare, color: "text-chart-3" },
     { title: "Total Views", value: totalViews.toLocaleString(), icon: Eye, color: "text-chart-4" },

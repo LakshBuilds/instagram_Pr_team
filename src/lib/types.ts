@@ -1,0 +1,33 @@
+export interface Video {
+  id: string;
+  video_id: string | null;
+  channel_name: string | null;
+  channel_id?: string | null;
+  title: string | null;
+  description: string | null;
+  published_at: string | null;
+  thumbnail_url?: string | null;
+  video_url: string | null;
+  duration?: string | null;
+  duration_seconds: number | null;
+  view_count: number | null;
+  like_count: number | null;
+  dislike_count?: number | null;
+  comment_count: number | null;
+  subscriber_count?: number | null;
+  category: string | null;
+  tags: string[] | null;
+  language?: string | null;
+  is_short: boolean | null;
+  is_live?: boolean | null;
+  is_archived: boolean | null;
+  payout: number | null;
+  locationname?: string | null;
+  created_by_user_id: string | null;
+  created_by_email: string | null;
+  created_by_name: string | null;
+  last_updated_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  refresh_failed?: boolean | null;
+}
