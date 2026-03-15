@@ -235,15 +235,24 @@ const Dashboard = () => {
   };
 
   const refreshReelsFromInternalApi = async (userInfo: { id: string; email: string; fullName: string }) => {
-    // Fetch all existing reels
-    const { data: existingReels, error } = await supabase
-      .from("reels")
-      .select("*")
-      .or(`permalink.not.is.null,url.not.is.null,inputurl.not.is.null`);
-
-    if (error || !existingReels) {
-      console.error("Error fetching reels:", error);
-      return { total: 0, success: 0, errors: 1 };
+    // Fetch all existing reels with pagination (Supabase returns max 1000 per request)
+    const PAGE_SIZE = 1000;
+    const existingReels: any[] = [];
+    let from = 0;
+    while (true) {
+      const { data: page, error } = await supabase
+        .from("reels")
+        .select("*")
+        .or(`permalink.not.is.null,url.not.is.null,inputurl.not.is.null`)
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) {
+        console.error("Error fetching reels:", error);
+        return { total: 0, success: 0, errors: 1 };
+      }
+      if (!page?.length) break;
+      existingReels.push(...page);
+      if (page.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
     }
 
     console.log(`🔄 Refreshing ${existingReels.length} reels from Internal API...`);
@@ -364,15 +373,29 @@ const Dashboard = () => {
         fullName: user.fullName || "User",
       };
       
-      // Fetch only failed reels
-      const failedQuery = supabase
-        .from("reels")
-        .select("*");
-      const { data: failedReels, error: fetchError } = await (failedQuery as any)
-        .eq("refresh_failed", true)
-        .or(`permalink.not.is.null,url.not.is.null,inputurl.not.is.null`);
+      // Fetch only failed reels (with pagination in case there are 1000+)
+      const PAGE_SIZE = 1000;
+      const failedReels: any[] = [];
+      let from = 0;
+      while (true) {
+        const query = (supabase as any)
+          .from("reels")
+          .select("*")
+          .eq("refresh_failed", true)
+          .or(`permalink.not.is.null,url.not.is.null,inputurl.not.is.null`);
+        const { data: page, error: fetchError } = await query.range(from, from + PAGE_SIZE - 1);
+        if (fetchError) {
+          toast.error("Failed to load failed reels");
+          setRefreshingFailed(false);
+          return;
+        }
+        if (!page?.length) break;
+        failedReels.push(...page);
+        if (page.length < PAGE_SIZE) break;
+        from += PAGE_SIZE;
+      }
       
-      if (fetchError || !failedReels || failedReels.length === 0) {
+      if (failedReels.length === 0) {
         toast.info("No failed reels to refresh");
         setRefreshingFailed(false);
         return;
