@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import Header from "@/components/dashboard/Header";
@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Download, Loader2, Save, Key, AlertCircle, ExternalLink, RefreshCw, AlertTriangle } from "lucide-react";
+import { Download, Loader2, Save, Key, AlertCircle, ExternalLink, RefreshCw, AlertTriangle, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { importApifyDataToSupabase, refreshAllReelsFromApify } from "@/lib/apify";
 import { fetchFromInternalApi, transformInternalApiToReel, getRateLimitStatus } from "@/lib/internalApi";
@@ -48,6 +48,8 @@ interface Reel {
   language?: string | null;
   locationname: string | null;
   shortcode?: string | null;
+  url?: string | null;
+  inputurl?: string | null;
 }
 
 const Dashboard = () => {
@@ -68,6 +70,20 @@ const Dashboard = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshingFailed, setRefreshingFailed] = useState(false);
   const [failedReelsCount, setFailedReelsCount] = useState(0);
+  const [refreshingZeroViews, setRefreshingZeroViews] = useState(false);
+
+  const zeroViewsTeamReelsCount = useMemo(() => {
+    return allReels.filter((reel) => {
+      const views = Number(reel.videoplaycount ?? reel.videoviewcount ?? 0);
+      if (views !== 0) return false;
+      const reelUrl =
+        (reel.permalink?.trim() ||
+          reel.url?.trim() ||
+          reel.inputurl?.trim() ||
+          (reel.shortcode ? `https://www.instagram.com/p/${reel.shortcode}/` : "")) as string;
+      return Boolean(reelUrl);
+    }).length;
+  }, [allReels]);
 
   // Load reels once Clerk user is ready
   useEffect(() => {
@@ -462,6 +478,133 @@ const Dashboard = () => {
     }
   };
 
+  const handleRefreshZeroViewsTeamReels = async () => {
+    if (!user) {
+      toast.error("User not authenticated");
+      return;
+    }
+
+    const userEmail = user.primaryEmailAddress?.emailAddress || "";
+    const keyToUse = apiKey.trim() || undefined;
+    const provider = getApiProvider();
+
+    const zeroReels = allReels.filter((reel) => {
+      const views = Number(reel.videoplaycount ?? reel.videoviewcount ?? 0);
+      if (views !== 0) return false;
+      const reelUrl =
+        reel.permalink?.trim() ||
+        reel.url?.trim() ||
+        reel.inputurl?.trim() ||
+        (reel.shortcode ? `https://www.instagram.com/p/${reel.shortcode}/` : "");
+      return Boolean(reelUrl);
+    });
+
+    if (zeroReels.length === 0) {
+      toast.info("No team reels with 0 views to refresh");
+      return;
+    }
+
+    setRefreshingZeroViews(true);
+    const results = { total: zeroReels.length, success: 0, errors: 0 };
+
+    const APIFY_API_URL =
+      "https://api.apify.com/v2/acts/apify~instagram-reel-scraper/run-sync-get-dataset-items";
+    const APIFY_TOKEN = keyToUse || import.meta.env.VITE_APIFY_TOKEN || "";
+
+    try {
+      toast.info(
+        `Refreshing ${zeroReels.length} team reel(s) with 0 views using ${provider === "internal" ? "Internal API" : "Apify"}...`
+      );
+
+      for (let i = 0; i < zeroReels.length; i++) {
+        const reel = zeroReels[i];
+        const url =
+          reel.permalink?.trim() ||
+          reel.url?.trim() ||
+          reel.inputurl?.trim() ||
+          (reel.shortcode ? `https://www.instagram.com/p/${reel.shortcode}/` : "");
+        if (!url) continue;
+
+        try {
+          if (provider === "internal") {
+            const response = await fetchFromInternalApi(url);
+            const transformed = transformInternalApiToReel(response, url);
+
+            const { error: updateError } = await supabase
+              .from("reels")
+              .update({
+                videoplaycount: transformed.videoplaycount,
+                videoviewcount: transformed.videoviewcount,
+                likescount: transformed.likescount,
+                commentscount: transformed.commentscount,
+                lastupdatedat: new Date().toISOString(),
+                refresh_failed: false,
+              } as any)
+              .eq("id", reel.id);
+
+            if (updateError) results.errors++;
+            else results.success++;
+          } else {
+            if (!APIFY_TOKEN) {
+              toast.error("Apify token missing. Add an API key or set VITE_APIFY_TOKEN.");
+              results.errors += zeroReels.length - i;
+              break;
+            }
+            const apifyRes = await fetch(`${APIFY_API_URL}?token=${APIFY_TOKEN}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ directUrls: [url], resultsLimit: 1 }),
+            });
+            if (!apifyRes.ok) throw new Error(`Apify API error: ${apifyRes.status}`);
+            const data = await apifyRes.json();
+            if (data && data.length > 0) {
+              const reelData = data[0];
+              const newViewCount = reelData.videoPlayCount ?? reelData.playCount ?? 0;
+              const newLikesCount = reelData.likesCount ?? 0;
+              const newCommentsCount = reelData.commentsCount ?? 0;
+              const { error: updateError } = await supabase
+                .from("reels")
+                .update({
+                  videoplaycount: newViewCount,
+                  likescount: newLikesCount,
+                  commentscount: newCommentsCount,
+                  lastupdatedat: new Date().toISOString(),
+                  refresh_failed: false,
+                } as any)
+                .eq("id", reel.id);
+              if (updateError) results.errors++;
+              else results.success++;
+            } else {
+              results.errors++;
+            }
+          }
+        } catch (error) {
+          console.error(`Error refreshing zero-views reel ${url}:`, error);
+          results.errors++;
+        }
+
+        if (i < zeroReels.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+
+      if (results.errors === 0 && results.success > 0) {
+        toast.success(`Updated ${results.success} reel(s) that had 0 views`);
+      } else if (results.success > 0) {
+        toast.warning(`Updated ${results.success} reel(s), ${results.errors} still failing`);
+      } else {
+        toast.error(`Could not refresh 0-view reels: ${results.errors} error(s)`);
+      }
+
+      await fetchReels(userEmail);
+    } catch (error) {
+      console.error("Refresh zero-views reels error:", error);
+      toast.error("Failed to refresh reels with 0 views. Please try again.");
+    } finally {
+      setRefreshingZeroViews(false);
+    }
+  };
+
   if (!isLoaded || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -557,7 +700,7 @@ const Dashboard = () => {
               <div className="flex-1 flex items-center gap-2">
                 <Button
                   onClick={handleRefreshData}
-                  disabled={refreshing || refreshingFailed}
+                  disabled={refreshing || refreshingFailed || refreshingZeroViews}
                   variant="outline"
                   size="sm"
                   className="h-8"
@@ -577,7 +720,7 @@ const Dashboard = () => {
                 {failedReelsCount > 0 && (
                   <Button
                     onClick={handleRefreshFailedReels}
-                    disabled={refreshing || refreshingFailed}
+                    disabled={refreshing || refreshingFailed || refreshingZeroViews}
                     variant="outline"
                     size="sm"
                     className="h-8 border-orange-300 text-orange-600 hover:bg-orange-50 dark:border-orange-700 dark:text-orange-400 dark:hover:bg-orange-950/20"
@@ -591,6 +734,27 @@ const Dashboard = () => {
                       <>
                         <AlertTriangle className="h-3 w-3 mr-2" />
                         Retry Failed ({failedReelsCount})
+                      </>
+                    )}
+                  </Button>
+                )}
+                {zeroViewsTeamReelsCount > 0 && (
+                  <Button
+                    onClick={handleRefreshZeroViewsTeamReels}
+                    disabled={refreshing || refreshingFailed || refreshingZeroViews}
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                  >
+                    {refreshingZeroViews ? (
+                      <>
+                        <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                        Retrying 0 views...
+                      </>
+                    ) : (
+                      <>
+                        <EyeOff className="h-3 w-3 mr-2" />
+                        Retry 0 views ({zeroViewsTeamReelsCount})
                       </>
                     )}
                   </Button>
