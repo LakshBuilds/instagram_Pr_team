@@ -185,7 +185,22 @@ app.post('/api/async/scrape', async (req, res) => {
   }
 });
 
-// Process job in background with retry logic
+// Fire-and-forget: register this URL for the upstream's daily trickle refresh.
+// Means: even when nobody opens the dashboard, view counts stay current.
+async function trackUpstream(url) {
+  try {
+    await fetch(`${INTERNAL_API_URL}/track?urls=${encodeURIComponent(url)}`, {
+      method: 'POST',
+    });
+  } catch {
+    // ignore — tracking is best-effort, not on the critical path
+  }
+}
+
+// Process job in background — submits to upstream's async endpoint (which has
+// a global rate-limit gate to handle concurrent uploads safely) and polls
+// for the result. Holds NO long HTTP connection on our side: each Node call
+// is a fast submit/poll, so we can run many jobs in parallel cheaply.
 async function processJob(jobId, url) {
   const job = jobQueue.get(jobId);
   if (!job) return;
@@ -193,64 +208,131 @@ async function processJob(jobId, url) {
   job.status = 'processing';
   console.log(`⚙️ Processing job ${jobId}...`);
 
-  const MAX_RETRIES = 2; // Reduced retries since each attempt takes 90s
-  const RETRY_DELAY_MS = 3000; // 3 seconds between retries
+  // Auto-register for the daily trickle refresh in parallel (best-effort)
+  trackUpstream(url);
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  const POLL_INTERVAL_MS = 3000;
+  const MAX_POLL_ATTEMPTS = 120; // up to ~6 min for queue + scrape
+  const SUBMIT_RETRY_BACKOFF_MS = 15000; // upstream may 503 if all accounts cooled
+
+  let upstreamJobId = null;
+
+  // Submit (with backoff on 503 "all accounts cooled down")
+  for (let attempt = 1; attempt <= 3 && !upstreamJobId; attempt++) {
     try {
-      console.log(`🔄 Attempt ${attempt}/${MAX_RETRIES} for job ${jobId}`);
-      
-      // Add timeout - 95s (just under Cloudflare's 100s limit)
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 95000);
-      
-      const response = await fetch(`${INTERNAL_API_URL}/scrape?url=${encodeURIComponent(url)}`, {
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => 'Unknown error');
-        // Check if it's a Cloudflare 524 error
-        if (response.status === 524 || errorText.includes('524') || errorText.includes('timeout occurred')) {
-          throw new Error('Cloudflare timeout (524) - Python scraper is too slow');
-        }
-        throw new Error(`Internal API error: ${response.status} - ${errorText}`);
+      const res = await fetch(
+        `${INTERNAL_API_URL}/api/async/scrape?url=${encodeURIComponent(url)}`,
+        { method: 'POST' }
+      );
+      const body = await res.json().catch(() => ({}));
+      if (res.status === 503) {
+        const wait = (body?.detail?.retry_after_sec || 30) * 1000;
+        console.log(`⏸️ Upstream throttled (503). Backing off ${wait/1000}s before retry ${attempt}`);
+        job.status = 'queued_for_retry';
+        await new Promise(r => setTimeout(r, Math.min(wait, SUBMIT_RETRY_BACKOFF_MS * attempt)));
+        continue;
       }
-
-      const data = await response.json();
-      
-      job.status = 'completed';
-      job.result = data;
-      console.log(`✅ Job ${jobId} completed successfully on attempt ${attempt}`);
-      return; // Success - exit the retry loop
-      
-    } catch (error) {
-      const isTimeout = error.name === 'AbortError' || error.message?.includes('timeout');
-      const isCloudflareError = error.message?.includes('524') || error.message?.includes('timeout occurred');
-      
-      console.error(`❌ Job ${jobId} attempt ${attempt} failed:`, error.message);
-      
-      if (attempt < MAX_RETRIES && (isTimeout || isCloudflareError)) {
-        console.log(`⏳ Cloudflare timeout detected. Retrying in ${RETRY_DELAY_MS/1000}s...`);
-        job.status = 'retrying';
-        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
-        job.status = 'processing';
-      } else {
+      if (!res.ok) {
+        throw new Error(`Submit failed: HTTP ${res.status} - ${JSON.stringify(body)}`);
+      }
+      upstreamJobId = body.job_id;
+      if (!upstreamJobId) throw new Error(`No job_id in submit response: ${JSON.stringify(body)}`);
+    } catch (e) {
+      console.error(`❌ Submit attempt ${attempt} for ${jobId} failed:`, e.message);
+      if (attempt === 3) {
         job.status = 'failed';
-        // Provide user-friendly error message
-        if (isTimeout || isCloudflareError) {
-          job.error = 'Instagram scraper timed out. The Python API is taking too long (>100s). Please restart the Cloudflare tunnel or check the scraper.';
-        } else {
-          job.error = error.message;
-        }
-        console.error(`❌ Job ${jobId} failed after ${attempt} attempts:`, job.error);
+        job.error = e.message;
         return;
       }
+      await new Promise(r => setTimeout(r, SUBMIT_RETRY_BACKOFF_MS));
     }
   }
+
+  // Poll upstream status until terminal
+  for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt++) {
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+    try {
+      const res = await fetch(`${INTERNAL_API_URL}/api/async/status/${upstreamJobId}`);
+      if (!res.ok) {
+        console.warn(`⚠️ Poll ${attempt} failed: HTTP ${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      if (data.status === 'completed' && data.result) {
+        // `data.result` already matches the shape clients expect: {success, data, ...}
+        job.status = 'completed';
+        job.result = data.result;
+        console.log(`✅ Job ${jobId} completed via upstream job ${upstreamJobId}`);
+        return;
+      }
+      if (data.status === 'failed') {
+        job.status = 'failed';
+        job.error = data.error || 'Upstream job failed';
+        console.error(`❌ Job ${jobId} failed: ${job.error}`);
+        return;
+      }
+      // status is 'pending' or 'processing' — keep polling
+    } catch (e) {
+      console.warn(`⚠️ Poll attempt ${attempt} error: ${e.message}`);
+    }
+  }
+
+  job.status = 'failed';
+  job.error = `Timed out polling upstream after ${MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS / 1000}s`;
+  console.error(`❌ Job ${jobId}: ${job.error}`);
 }
+
+// Read cached reel info from upstream — does NOT hit Instagram. Returns whatever
+// the most recent scrape stored. Pair this with auto-refresh-on-track so dashboards
+// can load instantly without ever waiting for an IG round-trip.
+app.get('/api/reel-info', async (req, res) => {
+  try {
+    const url = req.query.url;
+    if (!url) {
+      return res.status(400).json({ success: false, error: 'url query param required' });
+    }
+    const upRes = await fetch(`${INTERNAL_API_URL}/reel-info?url=${encodeURIComponent(url)}`);
+    const data = await upRes.json().catch(() => ({}));
+    return res.status(upRes.status).json(data);
+  } catch (e) {
+    res.status(502).json({ success: false, error: `Upstream unreachable: ${e.message}` });
+  }
+});
+
+// Register reel URLs for the daily trickle refresh. Call this on reel upload
+// so the URL gets refreshed automatically once a day (24h interval) even when
+// nobody opens the website. Accepts a JSON body { urls: [...] } or repeated
+// ?urls=... query params.
+app.post('/api/track', async (req, res) => {
+  try {
+    let urls = [];
+    if (Array.isArray(req.body?.urls)) urls = req.body.urls;
+    if (typeof req.query.urls === 'string') urls.push(req.query.urls);
+    if (Array.isArray(req.query.urls)) urls.push(...req.query.urls);
+    urls = urls.filter(u => typeof u === 'string' && u.includes('instagram.com'));
+    if (urls.length === 0) {
+      return res.status(400).json({ success: false, error: 'No valid Instagram URLs provided' });
+    }
+    const qs = urls.map(u => `urls=${encodeURIComponent(u)}`).join('&');
+    const upRes = await fetch(`${INTERNAL_API_URL}/track?${qs}`, { method: 'POST' });
+    const data = await upRes.json().catch(() => ({}));
+    return res.status(upRes.status).json(data);
+  } catch (e) {
+    res.status(502).json({ success: false, error: `Upstream unreachable: ${e.message}` });
+  }
+});
+
+// Snapshot of all tracked reels + last refresh + latest views (handy admin view)
+app.get('/api/track', async (req, res) => {
+  try {
+    const upRes = await fetch(`${INTERNAL_API_URL}/track`);
+    const data = await upRes.json().catch(() => ({}));
+    return res.status(upRes.status).json(data);
+  } catch (e) {
+    res.status(502).json({ success: false, error: `Upstream unreachable: ${e.message}` });
+  }
+});
+
 
 // Check job status
 app.get('/api/async/status/:jobId', (req, res) => {

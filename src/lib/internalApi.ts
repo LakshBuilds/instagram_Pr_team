@@ -91,6 +91,59 @@ function extractVideoDurationFromUrl(videoUrl: string | null): number | null {
 }
 
 /**
+ * Cached reel info from the upstream scraper's daily-refreshed cache.
+ *
+ * - Does NOT hit Instagram → instant response (no 3-30s wait)
+ * - Returns `{ cached: false }` if the reel hasn't been scraped yet — in that case
+ *   the URL is auto-registered for the upstream's daily trickle refresh and the
+ *   caller can fall back to `fetchFromInternalApiAsync()` if they need data NOW
+ * - Returns `{ cached: true, engagement, user, refreshed_at }` if data exists
+ *
+ * Use this for dashboard loads, table refreshes, anything that just wants the
+ * latest known view count without paying for an Instagram round-trip.
+ */
+export async function fetchCachedReelInfo(instagramUrl: string): Promise<{
+  cached: boolean;
+  engagement?: InternalApiResponse['data']['engagement'];
+  user?: InternalApiResponse['data']['user'];
+  refreshed_at?: string;
+  url?: string;
+}> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/reel-info?url=${encodeURIComponent(instagramUrl)}`);
+  if (!res.ok && res.status !== 202) {
+    throw new Error(`reel-info fetch failed: HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  return data;
+}
+
+/**
+ * Register reels for the upstream's daily auto-refresh. Call this when a reel
+ * is uploaded so it stays fresh in `fetchCachedReelInfo()` results — even when
+ * nobody opens the dashboard.
+ *
+ * Safe to call repeatedly with the same URL — upstream dedupes by shortcode.
+ */
+export async function trackReelsForRefresh(instagramUrls: string[]): Promise<{
+  added: number;
+  total_tracked: number;
+}> {
+  const baseUrl = getApiBaseUrl();
+  const urls = instagramUrls.filter(u => typeof u === 'string' && u.includes('instagram.com'));
+  if (urls.length === 0) return { added: 0, total_tracked: 0 };
+  const res = await fetch(`${baseUrl}/api/track`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ urls }),
+  });
+  if (!res.ok) {
+    throw new Error(`track register failed: HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
  * Get the base API URL based on environment
  */
 function getApiBaseUrl(): string {
