@@ -7,7 +7,20 @@ dotenv.config();
 console.log('🔍 INTERNAL_API_URL:', process.env.INTERNAL_API_URL || 'NOT SET');
 import express from 'express';
 import cors from 'cors';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { fetchReelFromApify, fetchReelsFromApify } from './api/apify.js';
+
+// Server-side Supabase client with service-role key (bypasses RLS — needed for the
+// sheet-sync cron to insert reels attributed to handler emails like rajoshree@buyhatke.com).
+// Falls back to anon key in dev; service-role is required in production.
+const supabaseAdmin = (process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.VITE_SUPABASE_URL)
+  ? createSupabaseClient(process.env.VITE_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+  : null;
+if (!supabaseAdmin) {
+  console.warn('⚠️  SUPABASE_SERVICE_ROLE_KEY not set — /api/import-reels will be 503');
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -321,6 +334,129 @@ app.post('/api/track', async (req, res) => {
     res.status(502).json({ success: false, error: `Upstream unreachable: ${e.message}` });
   }
 });
+
+// Bulk-import reels from the payment-tracking Google Sheet (or any external source).
+// Uses the service-role Supabase client to upsert reels attributed to each handler's
+// email, then auto-tracks each URL upstream so daily trickle refresh picks it up.
+//
+// Body shape: { reels: [{ url, ownerusername, payout, created_by_email,
+//                         created_by_name, locationname?, shortcode? }, ...] }
+//
+// Optional protection — set IMPORT_REELS_TOKEN in env to require a matching
+// X-Import-Token header (so random people on the internet can't insert).
+app.post('/api/import-reels', async (req, res) => {
+  // Token gate (optional)
+  const expected = process.env.IMPORT_REELS_TOKEN;
+  if (expected) {
+    const provided = req.get('X-Import-Token') || '';
+    if (provided !== expected) {
+      return res.status(401).json({ success: false, error: 'Invalid or missing X-Import-Token' });
+    }
+  }
+  if (!supabaseAdmin) {
+    return res.status(503).json({
+      success: false,
+      error: 'SUPABASE_SERVICE_ROLE_KEY not configured on server'
+    });
+  }
+  const reels = Array.isArray(req.body?.reels) ? req.body.reels : null;
+  if (!reels || reels.length === 0) {
+    return res.status(400).json({ success: false, error: 'body.reels[] required' });
+  }
+  const shortcodeRe = /instagram\.com\/(?:[^/]+\/)?(?:reels?|p)\/([A-Za-z0-9_-]+)/;
+  let inserted = 0, updated = 0, errors = 0;
+  const errorDetails = [];
+  for (const r of reels) {
+    try {
+      const url = r.url || r.permalink;
+      if (!url) { errors++; errorDetails.push({ row: r, err: 'no url' }); continue; }
+      let shortcode = r.shortcode;
+      if (!shortcode) {
+        const m = shortcodeRe.exec(url);
+        if (m) shortcode = m[1];
+      }
+      if (!shortcode) { errors++; errorDetails.push({ row: r, err: 'no shortcode' }); continue; }
+
+      const payload = {
+        ownerusername: r.ownerusername || null,
+        permalink: url,
+        url: url,
+        shortcode,
+        payout: r.payout == null ? null : Number(r.payout),
+        created_by_email: r.created_by_email || null,
+        created_by_name: r.created_by_name || null,
+        locationname: r.locationname || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      // Look for an existing row by shortcode (preferred) or url
+      const { data: existing, error: lookupErr } = await supabaseAdmin
+        .from('reels')
+        .select('id, payout')
+        .or(`shortcode.eq.${shortcode},url.eq.${url}`)
+        .limit(1);
+      if (lookupErr) throw lookupErr;
+
+      if (existing && existing.length > 0) {
+        const id = existing[0].id;
+        // Don't overwrite payout if our incoming value is 0/null (preserve existing data)
+        const upd = { ...payload };
+        if (payload.payout == null || payload.payout === 0) delete upd.payout;
+        const { error: updErr } = await supabaseAdmin.from('reels').update(upd).eq('id', id);
+        if (updErr) throw updErr;
+        updated++;
+      } else {
+        const { error: insErr } = await supabaseAdmin.from('reels').insert(payload);
+        if (insErr) throw insErr;
+        inserted++;
+      }
+
+      // Auto-register for daily trickle refresh upstream (best-effort, non-fatal)
+      if (INTERNAL_API_URL) {
+        fetch(`${INTERNAL_API_URL}/track?urls=${encodeURIComponent(url)}`, { method: 'POST' })
+          .catch(() => {});
+      }
+    } catch (e) {
+      errors++;
+      errorDetails.push({ shortcode: r.shortcode, err: e.message });
+    }
+  }
+
+  res.json({ success: true, inserted, updated, errors, errorDetails: errorDetails.slice(0, 10) });
+});
+
+
+// Bulk-apply bonus payments to existing reels (additive — adds to existing payout).
+// Body shape: { bonuses: [{ ownerusername, amount, shortcode? }, ...] }
+app.post('/api/apply-bonuses', async (req, res) => {
+  const expected = process.env.IMPORT_REELS_TOKEN;
+  if (expected) {
+    const provided = req.get('X-Import-Token') || '';
+    if (provided !== expected) return res.status(401).json({ success: false, error: 'Invalid token' });
+  }
+  if (!supabaseAdmin) return res.status(503).json({ success: false, error: 'no service-role client' });
+  const bonuses = Array.isArray(req.body?.bonuses) ? req.body.bonuses : null;
+  if (!bonuses || bonuses.length === 0) return res.status(400).json({ success: false, error: 'body.bonuses[] required' });
+  let applied = 0, missing = 0, errors = 0;
+  for (const b of bonuses) {
+    try {
+      if (!b.ownerusername || !b.amount) { errors++; continue; }
+      let q = supabaseAdmin.from('reels').select('id, payout').eq('ownerusername', b.ownerusername);
+      if (b.shortcode) q = q.eq('shortcode', b.shortcode);
+      const { data, error } = await q.order('created_at', { ascending: false }).limit(1);
+      if (error) throw error;
+      if (!data || data.length === 0) { missing++; continue; }
+      const newPayout = (Number(data[0].payout) || 0) + Number(b.amount);
+      const { error: updErr } = await supabaseAdmin.from('reels').update({ payout: newPayout }).eq('id', data[0].id);
+      if (updErr) throw updErr;
+      applied++;
+    } catch (e) {
+      errors++;
+    }
+  }
+  res.json({ success: true, applied, missing, errors });
+});
+
 
 // Snapshot of all tracked reels + last refresh + latest views (handy admin view)
 app.get('/api/track', async (req, res) => {
