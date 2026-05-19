@@ -74,6 +74,8 @@ const Dashboard = () => {
 
   const zeroViewsTeamReelsCount = useMemo(() => {
     return allReels.filter((reel) => {
+      // Already in the "Retry Failed" bucket — don't double-count here.
+      if ((reel as any).refresh_failed === true) return false;
       const views = Number(reel.videoplaycount ?? reel.videoviewcount ?? 0);
       if (views !== 0) return false;
       const reelUrl =
@@ -489,6 +491,8 @@ const Dashboard = () => {
     const provider = getApiProvider();
 
     const zeroReels = allReels.filter((reel) => {
+      // Skip already-failed reels — they're handled by the "Retry Failed" button.
+      if ((reel as any).refresh_failed === true) return false;
       const views = Number(reel.videoplaycount ?? reel.videoviewcount ?? 0);
       if (views !== 0) return false;
       const reelUrl =
