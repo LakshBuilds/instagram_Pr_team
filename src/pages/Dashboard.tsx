@@ -623,6 +623,11 @@ const Dashboard = () => {
   const yourStats = calculateStats(yourReels);
   const allStats = calculateStats(allReels);
   const globalStats = calculateStats(globalReels.length > 0 ? globalReels : allReels);
+  // Weekly stats exclude @buyhatke (organic profile) so the weekly views/payouts
+  // story isn't polluted by organic content. Organic still shows in totalViews etc.
+  const sponsoredOnly = (globalReels.length > 0 ? globalReels : allReels)
+    .filter(r => r.ownerusername !== "buyhatke");
+  const weeklyStats = calculateStats(sponsoredOnly);
   
   // Calculate streak data for the current user
   const userEmail = user?.primaryEmailAddress?.emailAddress;
@@ -896,11 +901,11 @@ const Dashboard = () => {
             </Card>
 
             <WeeklySummary
-              totalViews={globalStats.totalViews}
-              totalReels={globalStats.totalReels}
-              totalLikes={globalStats.totalLikes}
-              totalComments={globalStats.totalComments}
-              totalPayout={globalStats.totalPayout}
+              totalViews={weeklyStats.totalViews}
+              totalReels={weeklyStats.totalReels}
+              totalLikes={weeklyStats.totalLikes}
+              totalComments={weeklyStats.totalComments}
+              totalPayout={weeklyStats.totalPayout}
             />
             <StatsCards {...allStats} />
             {viewMode === "map" ? (

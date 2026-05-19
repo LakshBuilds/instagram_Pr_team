@@ -479,16 +479,26 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
               </TableCell>
             </TableRow>
           ) : (
-            reels.map((reel) => (
-              <TableRow 
+            reels.map((reel) => {
+              const isOrganic = reel.ownerusername === "buyhatke";
+              const rowClass = reel.is_archived ? "opacity-60 bg-muted/30" :
+                               isOrganic ? "bg-amber-50 dark:bg-amber-950/20" : "";
+              const cellBg = reel.is_archived ? "bg-muted/30" :
+                             isOrganic ? "bg-amber-50 dark:bg-amber-950/20" : "bg-background";
+              return (
+              <TableRow
                 key={reel.id}
-                className={reel.is_archived ? "opacity-60 bg-muted/30" : ""}
+                className={rowClass}
               >
-                <TableCell className={`sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] ${reel.is_archived ? 'bg-muted/30' : 'bg-background'}`}>
+                <TableCell className={`sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] ${cellBg}`}>
                   {reel.is_archived ? (
                     <Badge variant="secondary" className="flex items-center gap-1 w-fit">
                       <Archive className="h-3 w-3" />
                       Archived
+                    </Badge>
+                  ) : isOrganic ? (
+                    <Badge variant="outline" className="text-amber-600 border-amber-600">
+                      Organic
                     </Badge>
                   ) : (
                     <Badge variant="outline" className="text-green-600 border-green-600">
@@ -496,7 +506,7 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                     </Badge>
                   )}
                 </TableCell>
-                <TableCell className={`font-medium sticky left-[85px] z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] ${reel.is_archived ? 'bg-muted/30' : 'bg-background'}`}>{reel.ownerusername || "-"}</TableCell>
+                <TableCell className={`font-medium sticky left-[85px] z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] ${cellBg}`}>{reel.ownerusername || "-"}</TableCell>
                 <TableCell className="max-w-xs truncate">
                   {reel.caption || "-"}
                 </TableCell>
@@ -696,7 +706,8 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
                   </div>
                 </TableCell>
               </TableRow>
-            ))
+              );
+            })
           )}
         </TableBody>
       </Table>
