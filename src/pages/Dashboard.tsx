@@ -632,6 +632,9 @@ const Dashboard = () => {
   const sponsoredOnly = (globalReels.length > 0 ? globalReels : allReels)
     .filter(r => r.ownerusername !== "buyhatke");
   const weeklyStats = calculateStats(sponsoredOnly);
+  const organicOnly = (globalReels.length > 0 ? globalReels : allReels)
+    .filter(r => r.ownerusername === "buyhatke");
+  const organicViews = organicOnly.reduce((sum, r) => sum + (Number(r.videoplaycount) || 0), 0);
   
   // Calculate streak data for the current user
   const userEmail = user?.primaryEmailAddress?.emailAddress;
@@ -700,10 +703,11 @@ const Dashboard = () => {
           </TabsContent>
 
           <TabsContent value="team-reels" className="space-y-6">
-            <ProgressTracker 
-              yourViews={yourStats.totalViews} 
-              teamViews={globalStats.totalViews} 
-              variant="team-reels" 
+            <ProgressTracker
+              yourViews={yourStats.totalViews}
+              teamViews={globalStats.totalViews}
+              organicViews={organicViews}
+              variant="team-reels"
             />
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1 flex items-center gap-2">

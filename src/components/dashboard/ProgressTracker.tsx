@@ -4,6 +4,7 @@ import { Target, TrendingUp, Users, User } from "lucide-react";
 interface ProgressTrackerProps {
   yourViews: number;
   teamViews: number;
+  organicViews?: number;
   target?: number;
   variant: "your-reels" | "team-reels";
 }
@@ -25,23 +26,25 @@ const formatFullNumber = (num: number): string => {
   return num.toLocaleString();
 };
 
-const ProgressTracker = ({ yourViews, teamViews, target = TARGET_VIEWS, variant }: ProgressTrackerProps) => {
+const ProgressTracker = ({ yourViews, teamViews, organicViews = 0, target = TARGET_VIEWS, variant }: ProgressTrackerProps) => {
   const stats = useMemo(() => {
     const totalViews = teamViews;
     const otherTeamViews = teamViews - yourViews;
     const totalPercentage = Math.min((totalViews / target) * 100, 100);
     const yourPercentage = Math.min((yourViews / target) * 100, 100);
+    const organicPercentage = Math.min((organicViews / target) * 100, 100);
     const yourContributionPercentage = totalViews > 0 ? (yourViews / totalViews) * 100 : 0;
-    
+
     return {
       totalViews,
       otherTeamViews,
       totalPercentage,
       yourPercentage,
+      organicPercentage,
       yourContributionPercentage,
       remaining: target - totalViews,
     };
-  }, [yourViews, teamViews, target]);
+  }, [yourViews, teamViews, organicViews, target]);
 
   if (variant === "your-reels") {
     return (
@@ -178,27 +181,59 @@ const ProgressTracker = ({ yourViews, teamViews, target = TARGET_VIEWS, variant 
         </div>
       </div>
 
-      {/* Progress Bar */}
-      <div className="relative mb-4">
+      {/* Progress Bar — Sponsored (green) */}
+      <div className="relative mb-2">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">Sponsored</span>
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">{formatNumber(stats.totalViews)}</span>
+        </div>
         <div className="h-5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
           <div
             className="h-full bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 transition-all duration-1000 ease-out relative overflow-hidden"
             style={{ width: `${stats.totalPercentage}%` }}
           >
-            {/* Shine effect */}
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse" />
           </div>
         </div>
-        
-        {/* Progress markers */}
-        <div className="absolute top-7 left-0 right-0 flex justify-between text-[10px] text-slate-400 dark:text-slate-500">
-          <span>0</span>
-          <span>250M</span>
-          <span>500M</span>
-          <span>750M</span>
-          <span>1B</span>
-        </div>
       </div>
+
+      {/* Progress Bar — Organic (amber, @buyhatke) */}
+      {organicViews > 0 && (
+        <div className="relative mb-4">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400">Organic (@buyhatke)</span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400">{formatNumber(organicViews)}</span>
+          </div>
+          <div className="h-5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
+            <div
+              className="h-full bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 transition-all duration-1000 ease-out relative overflow-hidden"
+              style={{ width: `${stats.organicPercentage}%` }}
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse" />
+            </div>
+          </div>
+
+          {/* Progress markers */}
+          <div className="absolute top-12 left-0 right-0 flex justify-between text-[10px] text-slate-400 dark:text-slate-500">
+            <span>0</span>
+            <span>250M</span>
+            <span>500M</span>
+            <span>750M</span>
+            <span>1B</span>
+          </div>
+        </div>
+      )}
+      {organicViews === 0 && (
+        <div className="relative mb-4">
+          <div className="absolute top-1 left-0 right-0 flex justify-between text-[10px] text-slate-400 dark:text-slate-500">
+            <span>0</span>
+            <span>250M</span>
+            <span>500M</span>
+            <span>750M</span>
+            <span>1B</span>
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="flex items-center justify-between mt-8 pt-4 border-t border-emerald-200 dark:border-emerald-800">
