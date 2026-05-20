@@ -7,7 +7,6 @@ import ReelsTable from "@/components/dashboard/ReelsTable";
 import LocationMap from "@/components/dashboard/LocationMap";
 import ProgressTracker from "@/components/dashboard/ProgressTracker";
 import StreakCounter from "@/components/dashboard/StreakCounter";
-import AchievementsSection from "@/components/dashboard/AchievementsSection";
 import WeeklySummary from "@/components/dashboard/WeeklySummary";
 import { calculateStreakData } from "@/lib/streakCalculator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -686,7 +685,6 @@ const Dashboard = () => {
               teamViews={globalStats.totalViews} 
               variant="your-reels" 
             />
-            <AchievementsSection reels={yourReels} userEmail={userEmail} />
             <StatsCards {...yourStats} />
             {viewMode === "map" ? (
               <LocationMap 
