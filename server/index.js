@@ -426,6 +426,36 @@ app.post('/api/import-reels', async (req, res) => {
 });
 
 
+// Bulk-update view counts for existing reels (used by bulk_refresh_reels.py).
+// Body: { updates: [{ shortcode, videoplaycount, likescount?, commentscount? }, ...] }
+app.post('/api/bulk-update-views', async (req, res) => {
+  const expected = process.env.IMPORT_REELS_TOKEN;
+  if (expected) {
+    const provided = req.get('X-Import-Token') || '';
+    if (provided !== expected) return res.status(401).json({ success: false, error: 'Invalid token' });
+  }
+  if (!supabaseAdmin) return res.status(503).json({ success: false, error: 'no service-role client' });
+  const updates = Array.isArray(req.body?.updates) ? req.body.updates : null;
+  if (!updates || updates.length === 0) return res.status(400).json({ success: false, error: 'body.updates[] required' });
+
+  let applied = 0, errors = 0;
+  for (const u of updates) {
+    if (!u.shortcode) { errors++; continue; }
+    const patch = { lastupdatedat: new Date().toISOString(), refresh_failed: false };
+    if (u.videoplaycount != null) patch.videoplaycount = u.videoplaycount;
+    if (u.likescount     != null) patch.likescount     = u.likescount;
+    if (u.commentscount  != null) patch.commentscount  = u.commentscount;
+    try {
+      const { error } = await supabaseAdmin.from('reels').update(patch).eq('shortcode', u.shortcode);
+      if (error) throw error;
+      applied++;
+    } catch (e) {
+      errors++;
+    }
+  }
+  res.json({ success: true, applied, errors });
+});
+
 // Bulk-apply bonus payments to existing reels (additive — adds to existing payout).
 // Body shape: { bonuses: [{ ownerusername, amount, shortcode? }, ...] }
 app.post('/api/apply-bonuses', async (req, res) => {
