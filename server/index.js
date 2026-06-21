@@ -445,6 +445,7 @@ app.post('/api/bulk-update-views', async (req, res) => {
     if (u.videoplaycount != null) patch.videoplaycount = u.videoplaycount;
     if (u.likescount     != null) patch.likescount     = u.likescount;
     if (u.commentscount  != null) patch.commentscount  = u.commentscount;
+    if (u.takenat        != null) patch.takenat        = u.takenat;
     try {
       const { error } = await supabaseAdmin.from('reels').update(patch).eq('shortcode', u.shortcode);
       if (error) throw error;
