@@ -144,12 +144,17 @@ const Dashboard = () => {
         return q.order("takenat", { ascending: false });
       };
       const buildTeamQuery = () => {
-        let q: any = supabase.from("reels").select("*").neq("created_by_email", "organic@buyhatke.com");
+        let q: any = supabase.from("reels").select("*")
+          .neq("created_by_email", "organic@buyhatke.com")
+          .neq("ownerusername", "buyhatke");
         if (selectedLanguage !== "All") q = q.eq("language", selectedLanguage);
         if (selectedLocation !== "All") q = q.ilike("locationname", `%${selectedLocation}%`);
         return q.order("takenat", { ascending: false });
       };
-      const buildGlobalQuery = () => supabase.from("reels").select("*").neq("created_by_email", "organic@buyhatke.com").order("takenat", { ascending: false });
+      const buildGlobalQuery = () => supabase.from("reels").select("*")
+        .neq("created_by_email", "organic@buyhatke.com")
+        .neq("ownerusername", "buyhatke")
+        .order("takenat", { ascending: false });
 
       const [userReels, teamReels, globalReelsData] = await Promise.all([
         fetchAllPages(buildUserQuery),
@@ -261,6 +266,7 @@ const Dashboard = () => {
         .from("reels")
         .select("*")
         .neq("created_by_email", "organic@buyhatke.com")
+        .neq("ownerusername", "buyhatke")
         .or(`permalink.not.is.null,url.not.is.null,inputurl.not.is.null`)
         .range(from, from + PAGE_SIZE - 1);
       if (error) {
