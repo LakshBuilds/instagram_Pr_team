@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
     proxy: {
       '/api/internal': {
-        target: process.env.VITE_INTERNAL_API_URL || 'https://strips-ministries-informal-examining.trycloudflare.com',
+        target: process.env.VITE_INTERNAL_API_URL || 'https://api.rareme.shop',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/internal/, ''),
         secure: true,
