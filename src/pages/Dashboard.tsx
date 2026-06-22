@@ -144,12 +144,12 @@ const Dashboard = () => {
         return q.order("takenat", { ascending: false });
       };
       const buildTeamQuery = () => {
-        let q: any = supabase.from("reels").select("*");
+        let q: any = supabase.from("reels").select("*").neq("created_by_email", "organic@buyhatke.com");
         if (selectedLanguage !== "All") q = q.eq("language", selectedLanguage);
         if (selectedLocation !== "All") q = q.ilike("locationname", `%${selectedLocation}%`);
         return q.order("takenat", { ascending: false });
       };
-      const buildGlobalQuery = () => supabase.from("reels").select("*").order("takenat", { ascending: false });
+      const buildGlobalQuery = () => supabase.from("reels").select("*").neq("created_by_email", "organic@buyhatke.com").order("takenat", { ascending: false });
 
       const [userReels, teamReels, globalReelsData] = await Promise.all([
         fetchAllPages(buildUserQuery),
@@ -260,6 +260,7 @@ const Dashboard = () => {
       const { data: page, error } = await supabase
         .from("reels")
         .select("*")
+        .neq("created_by_email", "organic@buyhatke.com")
         .or(`permalink.not.is.null,url.not.is.null,inputurl.not.is.null`)
         .range(from, from + PAGE_SIZE - 1);
       if (error) {

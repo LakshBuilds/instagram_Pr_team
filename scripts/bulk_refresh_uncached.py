@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """
-Bulk-refresh all reels in Supabase via VM cache + Render server.
+Refresh ALL reels in Supabase by scraping directly from api.rareme.shop.
 
-Read path:  GET /api/reel-info?url=<url>  → cached play_count/likes/comments (fast)
-Write path: POST /api/bulk-update-views   → Render server writes with service-role key
+Two paths:
+  1. Cache hit  → GET  https://api.rareme.shop/reel-info?url=<url>   (instant)
+  2. Cache miss → POST https://api.rareme.shop/api/async/scrape       (live scrape)
+                  then poll /api/async/status/<job_id>
+
+Writes via Render /api/bulk-update-views (service-role key, bypasses RLS).
 
 Usage:
-    python3 scripts/bulk_refresh_reels.py             # refresh all 2970
-    python3 scripts/bulk_refresh_reels.py --limit 50  # test run
-    python3 scripts/bulk_refresh_reels.py --concurrency 20
+    python3 scripts/bulk_refresh_uncached.py             # all reels
+    python3 scripts/bulk_refresh_uncached.py --limit 50  # test
+    python3 scripts/bulk_refresh_uncached.py --concurrency 10
 """
 from __future__ import annotations
 
@@ -30,11 +34,15 @@ except ImportError:
     from supabase import create_client
     import requests
 
-SUPABASE_URL = os.environ.get("VITE_SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("VITE_SUPABASE_PUBLISHABLE_KEY")
-API_SERVER   = "https://instagram-pr-api.onrender.com"
-PAGE_SIZE    = 1000
-WRITE_BATCH  = 50   # flush to server every N updates
+SUPABASE_URL  = os.environ.get("VITE_SUPABASE_URL")
+SUPABASE_KEY  = os.environ.get("VITE_SUPABASE_PUBLISHABLE_KEY")
+VM_API        = "https://api.rareme.shop"
+RENDER_API    = "https://instagram-pr-api.onrender.com"
+
+PAGE_SIZE     = 1000
+WRITE_BATCH   = 50
+POLL_INTERVAL = 5     # seconds between status polls
+MAX_POLL      = 72    # 72 × 5s = 6 min max
 
 
 def fetch_all_reels(sb):
@@ -69,19 +77,15 @@ def get_url(reel: dict) -> str | None:
 def fetch_cached(reel_url: str):
     """Returns (play, likes, comments) from VM cache or None."""
     try:
-        r = requests.get(
-            f"{API_SERVER}/api/reel-info",
-            params={"url": reel_url},
-            timeout=20,
-        )
+        r = requests.get(f"{VM_API}/reel-info", params={"url": reel_url}, timeout=15)
         if not r.ok:
             return None
         d = r.json()
         if not d.get("success") or not d.get("cached"):
             return None
-        eng   = d.get("engagement") or {}
-        play  = eng.get("play_count") or eng.get("view_count") or eng.get("views")
-        likes = eng.get("like_count")
+        eng      = d.get("engagement") or {}
+        play     = eng.get("play_count") or eng.get("view_count") or eng.get("views")
+        likes    = eng.get("like_count")
         comments = eng.get("comment_count")
         if play is None:
             return None
@@ -94,20 +98,63 @@ def fetch_cached(reel_url: str):
         return None
 
 
+def scrape_live(reel_url: str):
+    """Submit async scrape to VM, poll for result. Returns (play, likes, comments) or None."""
+    # Submit
+    try:
+        r = requests.post(f"{VM_API}/api/async/scrape", params={"url": reel_url}, timeout=20)
+        if not r.ok:
+            return None
+        job_id = r.json().get("job_id")
+        if not job_id:
+            return None
+    except Exception:
+        return None
+
+    # Poll
+    for _ in range(MAX_POLL):
+        time.sleep(POLL_INTERVAL)
+        try:
+            r = requests.get(f"{VM_API}/api/async/status/{job_id}", timeout=15)
+            if not r.ok:
+                continue
+            d = r.json()
+            if d.get("status") == "completed":
+                result = d.get("result") or {}
+                data   = result.get("data") or {}
+                play = (
+                    data.get("play_count") or data.get("playCount") or
+                    data.get("video_play_count") or data.get("videoPlayCount") or
+                    data.get("view_count")
+                )
+                likes    = data.get("like_count")    or data.get("likeCount")    or data.get("likesCount")
+                comments = data.get("comment_count") or data.get("commentCount") or data.get("commentsCount")
+                if play is not None:
+                    return (
+                        int(play),
+                        int(likes)    if likes    is not None else None,
+                        int(comments) if comments is not None else None,
+                    )
+                return None
+            if d.get("status") == "failed":
+                return None
+        except Exception:
+            pass
+    return None  # timeout
+
+
 def flush_to_server(batch: list) -> tuple[int, int]:
-    """POST batch to /api/bulk-update-views. Returns (applied, errors)."""
     if not batch:
         return 0, 0
     try:
         r = requests.post(
-            f"{API_SERVER}/api/bulk-update-views",
+            f"{RENDER_API}/api/bulk-update-views",
             json={"updates": batch},
             timeout=30,
         )
         if r.ok:
             d = r.json()
             return d.get("applied", 0), d.get("errors", 0)
-        print(f"  ⚠️  server returned {r.status_code}: {r.text[:100]}")
         return 0, len(batch)
     except Exception as e:
         print(f"  ⚠️  flush error: {e}")
@@ -115,7 +162,6 @@ def flush_to_server(batch: list) -> tuple[int, int]:
 
 
 def reader_worker(task_q: Queue, pending_q: Queue, counters: dict, lock: threading.Lock):
-    """Read view counts from cache and push update dicts to pending_q."""
     while True:
         try:
             reel = task_q.get_nowait()
@@ -129,10 +175,16 @@ def reader_worker(task_q: Queue, pending_q: Queue, counters: dict, lock: threadi
             task_q.task_done()
             continue
 
+        # 1) Cache first
         counts = fetch_cached(reel_url)
+
+        # 2) Live scrape fallback
+        if counts is None:
+            counts = scrape_live(reel_url)
+
         if counts is None:
             with lock:
-                counters["miss"] += 1
+                counters["fail"] += 1
             task_q.task_done()
             continue
 
@@ -140,23 +192,21 @@ def reader_worker(task_q: Queue, pending_q: Queue, counters: dict, lock: threadi
         old_play = reel.get("videoplaycount") or 0
         new_play = max(int(play), int(old_play))
 
-        update = {
-            "shortcode": reel["shortcode"],
-            "videoplaycount": new_play,
-        }
+        update = {"shortcode": reel["shortcode"], "videoplaycount": new_play}
         if likes    is not None: update["likescount"]    = likes
         if comments is not None: update["commentscount"] = comments
 
         pending_q.put(update)
+        with lock:
+            counters["fetched"] += 1
         task_q.task_done()
 
 
 def writer_worker(pending_q: Queue, done_event: threading.Event, counters: dict, lock: threading.Lock):
-    """Drain pending_q in batches and flush to server."""
     buf = []
     while not done_event.is_set() or not pending_q.empty():
         try:
-            item = pending_q.get(timeout=2)
+            item = pending_q.get(timeout=3)
             buf.append(item)
             if len(buf) >= WRITE_BATCH:
                 applied, errors = flush_to_server(buf)
@@ -165,14 +215,12 @@ def writer_worker(pending_q: Queue, done_event: threading.Event, counters: dict,
                     counters["fail"] += errors
                 buf = []
         except Empty:
-            # Nothing new — flush what we have
             if buf:
                 applied, errors = flush_to_server(buf)
                 with lock:
                     counters["ok"]   += applied
                     counters["fail"] += errors
                 buf = []
-    # Final flush
     if buf:
         applied, errors = flush_to_server(buf)
         with lock:
@@ -183,21 +231,20 @@ def writer_worker(pending_q: Queue, done_event: threading.Event, counters: dict,
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit",       type=int, default=0,  help="Cap reels (0=all)")
-    ap.add_argument("--concurrency", type=int, default=20, help="Reader workers (default 20)")
+    ap.add_argument("--concurrency", type=int, default=10, help="Parallel reader workers (default 10)")
     args = ap.parse_args()
 
-    # Wait for Render to finish deploying if just pushed
-    print("🔍 Checking server is up…")
-    for _ in range(6):
-        try:
-            r = requests.get(f"{API_SERVER}/health", timeout=10)
-            if r.ok:
-                print("   ✅ Server ready\n")
-                break
-        except Exception:
-            pass
-        print("   ⏳ Waiting for server…")
-        time.sleep(10)
+    # Verify VM API is reachable
+    print("🔍 Checking VM API (api.rareme.shop)…")
+    try:
+        r = requests.get(f"{VM_API}/health", timeout=10)
+        if r.ok:
+            print("   ✅ VM API healthy\n")
+        else:
+            print(f"   ⚠️  VM API returned {r.status_code}\n")
+    except Exception as e:
+        print(f"   ❌ VM API unreachable: {e}\n")
+        sys.exit(1)
 
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -214,20 +261,21 @@ def main():
     for r in reels:
         task_q.put(r)
 
-    counters   = {"ok": 0, "fail": 0, "skip": 0, "miss": 0}
+    counters   = {"ok": 0, "fail": 0, "skip": 0, "fetched": 0}
     lock       = threading.Lock()
     done_event = threading.Event()
     total      = len(reels)
     n_readers  = min(args.concurrency, total)
 
-    print(f"🚀 Starting {n_readers} reader workers + 1 writer…\n")
+    print(f"🚀 Starting {n_readers} reader workers + 1 writer…")
+    print(f"   Cache hits → instant | Cache miss → live scrape (~30-60s each)\n")
     start_time = time.time()
 
-    # Start writer
+    # Writer
     wt = threading.Thread(target=writer_worker, args=(pending_q, done_event, counters, lock), daemon=True)
     wt.start()
 
-    # Start readers
+    # Readers
     readers = []
     for _ in range(n_readers):
         t = threading.Thread(target=reader_worker, args=(task_q, pending_q, counters, lock), daemon=True)
@@ -236,28 +284,26 @@ def main():
 
     # Progress
     while any(t.is_alive() for t in readers):
-        time.sleep(15)
+        time.sleep(20)
         with lock:
-            read_done = counters["ok"] + counters["fail"] + counters["skip"] + counters["miss"]
-            ok        = counters["ok"]
-            miss      = counters["miss"]
+            done   = counters["fetched"] + counters["fail"] + counters["skip"]
+            ok_db  = counters["ok"]
+            fail   = counters["fail"]
         elapsed = time.time() - start_time
-        rate    = read_done / elapsed * 60 if elapsed > 0 else 0
-        eta     = (total - read_done) / (rate / 60) if rate > 0 else 0
-        print(f"  {read_done}/{total}  ✅{ok} cached  ⚪{miss} not-in-cache  {rate:.0f}/min  ETA {eta/60:.1f}min")
+        rate    = done / elapsed * 60 if elapsed > 0 else 0
+        eta     = (total - done) / (rate / 60) if rate > 0 else 0
+        print(f"  {done}/{total}  ✅{ok_db} written  ❌{fail} failed  {rate:.0f}/min  ETA {eta/60:.1f}min")
 
     for t in readers:
         t.join()
 
-    # Signal writer to finish
     done_event.set()
     wt.join()
 
     elapsed = time.time() - start_time
     print(f"\n🎉 Done in {elapsed/60:.1f} min")
     print(f"   ✅ Updated in Supabase : {counters['ok']}")
-    print(f"   ⚪ Not in VM cache     : {counters['miss']}  (these need a fresh scrape)")
-    print(f"   ❌ Write errors        : {counters['fail']}")
+    print(f"   ❌ Failed (scrape/write): {counters['fail']}")
     print(f"   ⏭  No URL (skipped)   : {counters['skip']}")
 
 
