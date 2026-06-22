@@ -394,6 +394,13 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
       return;
     }
 
+    // Validate it's an actual reel/post URL not a profile URL
+    const isReelUrl = /instagram\.com\/(reel|p|reels)\/[A-Za-z0-9_-]+/.test(url);
+    if (!isReelUrl) {
+      toast.error("This entry has no valid reel link — it's a payout placeholder only.");
+      return;
+    }
+
     // Check if already in queue or refreshing
     if (queuedIds.has(reel.id) || refreshingIds.has(reel.id)) {
       toast.info(`Already ${refreshingIds.has(reel.id) ? 'refreshing' : 'queued'}: ${reel.shortcode || reel.ownerusername}`);
