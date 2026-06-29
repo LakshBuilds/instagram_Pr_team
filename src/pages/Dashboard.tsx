@@ -70,6 +70,7 @@ const Dashboard = () => {
   const [refreshingFailed, setRefreshingFailed] = useState(false);
   const [failedReelsCount, setFailedReelsCount] = useState(0);
   const [refreshingZeroViews, setRefreshingZeroViews] = useState(false);
+  const [organicViewsTotal, setOrganicViewsTotal] = useState(0);
 
   const zeroViewsTeamReelsCount = useMemo(() => {
     return allReels.filter((reel) => {
@@ -155,11 +156,14 @@ const Dashboard = () => {
         .neq("created_by_email", "organic@buyhatke.com")
         .neq("ownerusername", "buyhatke")
         .order("takenat", { ascending: false });
+      const buildOrganicQuery = () => supabase.from("reels").select("id,shortcode,videoplaycount,ownerusername,created_by_email")
+        .eq("ownerusername", "buyhatke");
 
-      const [userReels, teamReels, globalReelsData] = await Promise.all([
+      const [userReels, teamReels, globalReelsData, organicReelsData] = await Promise.all([
         fetchAllPages(buildUserQuery),
         fetchAllPages(buildTeamQuery),
         fetchAllPages(buildGlobalQuery),
+        fetchAllPages(buildOrganicQuery),
       ]);
 
       console.log("✅ User reels found:", userReels.length);
@@ -169,6 +173,9 @@ const Dashboard = () => {
       setYourReels(userReels);
       setAllReels(teamReels);
       setGlobalReels(globalReelsData);
+      // Store organic views total directly
+      const orgViews = organicReelsData.reduce((sum: number, r: any) => sum + (Number(r.videoplaycount) || 0), 0);
+      setOrganicViewsTotal(orgViews);
       
       // Fetch failed reels count
       const countQuery = supabase
@@ -640,7 +647,7 @@ const Dashboard = () => {
   const weeklyStats = calculateStats(sponsoredOnly);
   const organicOnly = (globalReels.length > 0 ? globalReels : allReels)
     .filter(r => r.ownerusername === "buyhatke");
-  const organicViews = organicOnly.reduce((sum, r) => sum + (Number(r.videoplaycount) || 0), 0);
+  const organicViews = organicViewsTotal || organicOnly.reduce((sum, r) => sum + (Number(r.videoplaycount) || 0), 0);
   
   // Calculate streak data for the current user
   const userEmail = user?.primaryEmailAddress?.emailAddress;
