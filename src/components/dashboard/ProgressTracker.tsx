@@ -199,7 +199,7 @@ const ProgressTracker = ({ yourViews, teamViews, organicViews = 0, target = TARG
 
       {/* Progress Bar — Organic (amber, @buyhatke) */}
       {organicViews > 0 && (
-        <div className="relative mb-4">
+        <div className="relative mb-2">
           <div className="flex items-center justify-between mb-1">
             <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400">Organic (@buyhatke)</span>
             <span className="text-[11px] text-slate-500 dark:text-slate-400">{formatNumber(organicViews)}</span>
@@ -212,28 +212,39 @@ const ProgressTracker = ({ yourViews, teamViews, organicViews = 0, target = TARG
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse" />
             </div>
           </div>
+        </div>
+      )}
 
-          {/* Progress markers */}
-          <div className="absolute top-12 left-0 right-0 flex justify-between text-[10px] text-slate-400 dark:text-slate-500">
-            <span>0</span>
-            <span>250M</span>
-            <span>500M</span>
-            <span>750M</span>
-            <span>1B</span>
+      {/* Progress Bar — Collectively (blue, sponsored + organic) */}
+      {(() => {
+        const collectiveViews = stats.totalViews + organicViews;
+        const collectivePct = Math.min((collectiveViews / target) * 100, 100);
+        return (
+          <div className="relative mb-4">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] font-medium text-blue-700 dark:text-blue-400">Collectively</span>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">{formatNumber(collectiveViews)}</span>
+            </div>
+            <div className="h-5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden shadow-inner">
+              <div
+                className="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-blue-600 transition-all duration-1000 ease-out relative overflow-hidden"
+                style={{ width: `${collectivePct}%` }}
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse" />
+              </div>
+            </div>
           </div>
-        </div>
-      )}
-      {organicViews === 0 && (
-        <div className="relative mb-4">
-          <div className="absolute top-1 left-0 right-0 flex justify-between text-[10px] text-slate-400 dark:text-slate-500">
-            <span>0</span>
-            <span>250M</span>
-            <span>500M</span>
-            <span>750M</span>
-            <span>1B</span>
-          </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* Progress markers */}
+      <div className="flex justify-between text-[10px] text-slate-400 dark:text-slate-500 mb-4 -mt-2">
+        <span>0</span>
+        <span>250M</span>
+        <span>500M</span>
+        <span>750M</span>
+        <span>1B</span>
+      </div>
 
       {/* Stats */}
       <div className="flex items-center justify-between mt-8 pt-4 border-t border-emerald-200 dark:border-emerald-800">
