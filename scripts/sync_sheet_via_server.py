@@ -139,7 +139,7 @@ def main():
     args = ap.parse_args()
 
     cutoff = datetime.utcnow() - timedelta(days=args.days)
-    sheets_to_process = [args.sheet] if args.sheet else ["April", "May", "June"]
+    sheets_to_process = [args.sheet] if args.sheet else ["April", "May", "June", "july"]
     print(f"📅 Window: last {args.days} days (>= {cutoff.date()})")
     print(f"📋 Sheets: {sheets_to_process}\n")
 
