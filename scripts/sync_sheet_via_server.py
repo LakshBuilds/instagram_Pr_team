@@ -121,8 +121,18 @@ def parse_sheet_date(raw: str, fallback_month: int = None, default_year: int = N
 def parse_amount(raw: str) -> int:
     if not raw:
         return 0
-    digits = "".join(c for c in str(raw) if c.isdigit())
-    return int(digits) if digits else 0
+    raw_str = str(raw).strip()
+    if 'no payment' in raw_str.lower():
+        return 0
+    import re as _re
+    nums = _re.findall(r'\d+', raw_str)
+    if not nums:
+        return 0
+    # If '+' or text mixed with numbers (e.g. "1500+2000 Bonus", "2000 (Bonus on 1M)"),
+    # sum ALL numbers to get the correct total.
+    if '+' in raw_str or (len(nums) > 1 and any(c.isalpha() for c in raw_str)):
+        return sum(int(n) for n in nums)
+    return int(nums[0])
 
 # Map sheet tab name → month number for date fallback
 SHEET_MONTH = {
