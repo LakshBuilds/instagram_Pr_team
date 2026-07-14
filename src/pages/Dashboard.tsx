@@ -8,6 +8,7 @@ import LocationMap from "@/components/dashboard/LocationMap";
 import ProgressTracker from "@/components/dashboard/ProgressTracker";
 import StreakCounter from "@/components/dashboard/StreakCounter";
 import WeeklyViewsChart from "@/components/dashboard/WeeklyViewsChart";
+import MonthlyCreatorsChart from "@/components/dashboard/MonthlyCreatorsChart";
 import { calculateStreakData } from "@/lib/streakCalculator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -722,6 +723,7 @@ const Dashboard = () => {
               variant="team-reels"
             />
             <WeeklyViewsChart reels={allReels} weeks={12} />
+            <MonthlyCreatorsChart reels={allReels} />
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1 flex items-center gap-2">
                 <Button
