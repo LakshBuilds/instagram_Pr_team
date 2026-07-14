@@ -9,6 +9,7 @@ import ProgressTracker from "@/components/dashboard/ProgressTracker";
 import StreakCounter from "@/components/dashboard/StreakCounter";
 import WeeklyViewsChart from "@/components/dashboard/WeeklyViewsChart";
 import MonthlyCreatorsChart from "@/components/dashboard/MonthlyCreatorsChart";
+import WeeklySummary from "@/components/dashboard/WeeklySummary";
 import { calculateStreakData } from "@/lib/streakCalculator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
