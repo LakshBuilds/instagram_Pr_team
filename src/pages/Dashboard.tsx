@@ -7,7 +7,7 @@ import ReelsTable from "@/components/dashboard/ReelsTable";
 import LocationMap from "@/components/dashboard/LocationMap";
 import ProgressTracker from "@/components/dashboard/ProgressTracker";
 import StreakCounter from "@/components/dashboard/StreakCounter";
-import WeeklySummary from "@/components/dashboard/WeeklySummary";
+import WeeklyViewsChart from "@/components/dashboard/WeeklyViewsChart";
 import { calculateStreakData } from "@/lib/streakCalculator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -721,6 +721,7 @@ const Dashboard = () => {
               organicViews={organicViews}
               variant="team-reels"
             />
+            <WeeklyViewsChart reels={allReels} weeks={12} />
             <div className="flex items-center justify-between gap-4">
               <div className="flex-1 flex items-center gap-2">
                 <Button
