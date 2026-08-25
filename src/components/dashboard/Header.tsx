@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { LogOut, BarChart3, LayoutDashboard, Download, Languages, MapPin, Navigation, Zap } from "lucide-react";
+import { LogOut, BarChart3, LayoutDashboard, Download, Languages, MapPin, Navigation, Zap, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
@@ -119,6 +119,7 @@ const Header = () => {
 
   const isAnalyticsPage = location.pathname === "/analytics";
   const isImportReelPage = location.pathname === "/import-reel";
+  const isLinkTrackerPage = location.pathname === "/link-tracker";
   const isDashboardPage = location.pathname === "/";
 
   // Fetch available locations
@@ -155,9 +156,9 @@ const Header = () => {
         <div className="flex items-center gap-3">
           <nav className="hidden md:flex items-center gap-2">
             <Button
-              variant={!isAnalyticsPage && !isImportReelPage ? "default" : "ghost"}
+              variant={isDashboardPage ? "default" : "ghost"}
               onClick={() => navigate("/")}
-              className={!isAnalyticsPage && !isImportReelPage ? "bg-gradient-instagram" : ""}
+              className={isDashboardPage ? "bg-gradient-instagram" : ""}
             >
               <LayoutDashboard className="h-4 w-4 mr-2" />
               Dashboard
@@ -177,6 +178,14 @@ const Header = () => {
             >
               <BarChart3 className="h-4 w-4 mr-2" />
               Analytics
+            </Button>
+            <Button
+              variant={isLinkTrackerPage ? "default" : "ghost"}
+              onClick={() => navigate("/link-tracker")}
+              className={isLinkTrackerPage ? "bg-gradient-instagram" : ""}
+            >
+              <Link2 className="h-4 w-4 mr-2" />
+              Link Tracker
             </Button>
             <Select value={apiProvider} onValueChange={handleApiProviderChange}>
               <SelectTrigger className="w-[180px]">

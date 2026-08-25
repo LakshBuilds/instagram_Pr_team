@@ -615,6 +615,133 @@ app.post('/api/internal/scrape', async (req, res) => {
   }
 });
 
+// ============================================================================
+// Link Tracker — BuyHatke userQuality proxy
+// ============================================================================
+//
+// Two endpoints are needed and neither is sufficient on its own:
+//   - userQualityDayWise is the ONLY one that reports Android/iOS installs. The
+//     monthly endpoint returns the `Uninstalled` bucket for `extension` alone, so
+//     a creator driving 9,000 Android installs reads as 1.
+//   - dayWise 504s on codes with heavy history, where monthly still answers.
+// So call both, keep whichever succeed, and let the client pick per metric.
+//
+// The passkey stays here — it must never be shipped to the browser.
+
+const USERQUALITY_URL = 'https://ext1.buyhatke.com/extension-apis/internal/userQuality';
+const USERQUALITY_DAYWISE_URL = 'https://ext1.buyhatke.com/extension-apis/internal/userQualityDayWise';
+const USERQUALITY_PASSKEY = process.env.USERQUALITY_PASSKEY;
+const UQ_TIMEOUT_MS = 180000;
+const UQ_CACHE_MS = 6 * 60 * 60 * 1000; // these calls take 10–55s; cache hard
+
+if (!USERQUALITY_PASSKEY) {
+  console.warn('⚠️  USERQUALITY_PASSKEY not set — /api/link-tracker/stats will be 503');
+}
+
+const uqCache = new Map();     // code -> { at, entry }
+const uqInFlight = new Map();  // code -> Promise
+
+async function uqCall(url, code) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, passkey: USERQUALITY_PASSKEY }),
+    signal: AbortSignal.timeout(UQ_TIMEOUT_MS),
+  });
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Gateway timeouts come back as an HTML error page, not JSON.
+    throw new Error(`Upstream returned non-JSON (HTTP ${response.status})`);
+  }
+}
+
+// Both endpoints 504 intermittently under their own latency, so try each twice.
+async function uqFetchOne(url, code) {
+  let payload;
+  try {
+    payload = await uqCall(url, code);
+  } catch (first) {
+    await new Promise((r) => setTimeout(r, 3000));
+    try {
+      payload = await uqCall(url, code);
+    } catch {
+      throw first;
+    }
+  }
+  if (payload?.status === 0 && /invalid auth/i.test(payload.msg || '')) {
+    throw new Error('Upstream rejected the passkey (invalid auth).');
+  }
+  return {
+    ok: true,
+    hasData: !!(payload?.status === 1 && payload?.data?.result),
+    message: payload?.status !== 1 ? payload?.msg || 'No data found!' : null,
+    payload,
+  };
+}
+
+function uqFetchBoth(code) {
+  if (uqInFlight.has(code)) return uqInFlight.get(code);
+
+  const job = (async () => {
+    const [monthly, daily] = await Promise.allSettled([
+      uqFetchOne(USERQUALITY_URL, code),
+      uqFetchOne(USERQUALITY_DAYWISE_URL, code),
+    ]);
+    const unwrap = (r) =>
+      r.status === 'fulfilled' ? r.value : { ok: false, hasData: false, error: r.reason.message };
+
+    const m = unwrap(monthly);
+    const d = unwrap(daily);
+    if (!m.ok && !d.ok) throw new Error(m.error || d.error || 'Both endpoints failed.');
+
+    const entry = {
+      code,
+      fetchedAt: new Date().toISOString(),
+      monthly: m,
+      daily: d,
+      hasData: !!(m.hasData || d.hasData),
+      message: m.hasData || d.hasData ? null : (m.message || d.message || 'No data found!'),
+    };
+    uqCache.set(code, { at: Date.now(), entry });
+    return entry;
+  })().finally(() => uqInFlight.delete(code));
+
+  uqInFlight.set(code, job);
+  return job;
+}
+
+app.get('/api/link-tracker/stats/:code', async (req, res) => {
+  if (!USERQUALITY_PASSKEY) {
+    return res.status(503).json({ error: 'USERQUALITY_PASSKEY not configured on the server.' });
+  }
+  const code = String(req.params.code || '').toUpperCase();
+  if (!code) return res.status(400).json({ error: 'code is required' });
+
+  const force = req.query.refresh === '1';
+  const cached = uqCache.get(code);
+
+  // cached=1 never touches the upstream — the portfolio table uses it so a dozen
+  // rows can't kick off a dozen 50s calls at once.
+  if (req.query.cached === '1') {
+    return res.json(cached ? { ...cached.entry, fromCache: true } : { code, missing: true });
+  }
+  if (!force && cached && Date.now() - cached.at < UQ_CACHE_MS) {
+    return res.json({ ...cached.entry, fromCache: true });
+  }
+
+  try {
+    res.json({ ...(await uqFetchBoth(code)), fromCache: false });
+  } catch (error) {
+    // Stale data beats no data when the upstream is timing out.
+    if (cached) {
+      return res.json({ ...cached.entry, fromCache: true, stale: true, error: error.message });
+    }
+    res.status(502).json({ error: error.message, code });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Apify API server running on http://localhost:${PORT}`);
 });

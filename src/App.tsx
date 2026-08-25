@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import Auth from "./pages/Auth";
 import Analytics from "./pages/Analytics";
 import ImportReel from "./pages/ImportReel";
+import LinkTracker from "./pages/LinkTracker";
 import NotFound from "./pages/NotFound";
 import { SignedIn, SignedOut, RedirectToSignIn } from "@clerk/clerk-react";
 
@@ -23,6 +24,7 @@ const App = () => (
             <Route path="/" element={<Dashboard />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/import-reel" element={<ImportReel />} />
+            <Route path="/link-tracker" element={<LinkTracker />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
