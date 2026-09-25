@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
 Fill missing takenat (publish date) for reels that have views but no date.
-Reads /tmp/missing_dates.json, scrapes via instagrapi to get timestamp,
-writes back via Render /api/bulk-update-views.
+Scrapes via instagrapi to get timestamp, writes back via Render
+/api/bulk-update-views.
+
+Reels to fill come from /tmp/missing_dates.json, or with --from-db straight
+from Supabase (every reel with no takenat; needs SUPABASE_SERVICE_ROLE_KEY).
+The daily cron uses --from-db.
 
 Uses slower rate (1 worker, 2s delay between requests) to avoid rate limiting
 and maximise timestamp retrieval success.
 """
-import os, sys, time, json, threading
+import argparse, os, sys, time, json, threading
 from datetime import datetime, timezone
 from queue import Queue, Empty
 
@@ -15,6 +19,8 @@ sys.path.insert(0, '/home/ubuntu/instagram_view_counter_api')
 import requests
 
 RENDER_API   = "https://instagram-pr-api.onrender.com"
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://xzutldcwrlrfkzkqtjyn.supabase.co")
+IMPORT_TOKEN = os.environ.get("IMPORT_REELS_TOKEN", "")
 COOKIE_FILES = [
     "/home/ubuntu/instagram_view_counter_api/cookies_bhdemo2025.txt",
     "/home/ubuntu/instagram_view_counter_api/cookies_hatke_automation.txt",
@@ -55,8 +61,9 @@ def scrape_timestamp(reel_url):
 def flush(batch):
     if not batch: return 0, 0
     try:
+        headers = {"X-Import-Token": IMPORT_TOKEN} if IMPORT_TOKEN else {}
         r = requests.post(f"{RENDER_API}/api/bulk-update-views",
-                          json={"updates": batch}, timeout=30)
+                          json={"updates": batch}, headers=headers, timeout=30)
         if r.ok:
             d = r.json()
             return d.get("applied",0), d.get("errors",0)
@@ -65,9 +72,43 @@ def flush(batch):
         print(f"  flush err: {e}")
         return 0, len(batch)
 
+def load_missing_from_db(limit):
+    """Reels with no publish date, newest first so fresh uploads fill soonest."""
+    key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+    headers = {"apikey": key, "Authorization": f"Bearer {key}"}
+    reels, page = [], 1000
+    while len(reels) < limit:
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/reels",
+            params={
+                "select": "shortcode,permalink,url,inputurl,videoplaycount",
+                "takenat": "is.null",
+                "shortcode": "not.is.null",
+                "order": "created_at.desc.nullslast",
+            },
+            headers={**headers, "Range": f"{len(reels)}-{len(reels) + page - 1}"},
+            timeout=30,
+        )
+        r.raise_for_status()
+        rows = r.json()
+        reels.extend(rows)
+        if len(rows) < page:
+            break
+    return reels[:limit]
+
 def main():
-    with open("/tmp/missing_dates.json") as f:
-        reels = json.load(f)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--from-db", action="store_true",
+                    help="Load reels missing takenat from Supabase instead of /tmp/missing_dates.json")
+    ap.add_argument("--limit", type=int, default=500,
+                    help="Max reels per run with --from-db (default 500)")
+    args = ap.parse_args()
+
+    if args.from_db:
+        reels = load_missing_from_db(args.limit)
+    else:
+        with open("/tmp/missing_dates.json") as f:
+            reels = json.load(f)
 
     total = len(reels)
     print(f"📅 Filling publish dates for {total} reels\n")
