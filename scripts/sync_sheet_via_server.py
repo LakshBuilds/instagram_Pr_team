@@ -23,6 +23,7 @@ import argparse
 import os
 import re
 import sys
+import time
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -142,6 +143,22 @@ SHEET_MONTH = {
     "May": 5, "June": 6, "July": 7, "August": 8,
     "September": 9, "October": 10, "November": 11, "December": 12,
 }
+
+def post_with_retry(url, payload, headers, timeout, attempts=3):
+    """POST, retrying on connection errors and 5xx (Render's free tier 502s
+    intermittently). Only for idempotent calls: import-reels upserts."""
+    for attempt in range(1, attempts + 1):
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
+            if resp.status_code < 500 or attempt == attempts:
+                return resp
+            print(f"  ⚠️  HTTP {resp.status_code}, retrying ({attempt}/{attempts - 1})...")
+        except requests.RequestException as e:
+            if attempt == attempts:
+                raise
+            print(f"  ⚠️  {type(e).__name__}, retrying ({attempt}/{attempts - 1})...")
+        time.sleep(10 * attempt)
+
 
 def main():
     ap = argparse.ArgumentParser()
@@ -266,19 +283,24 @@ def main():
     # Batch into chunks of 50 — Render free tier can be slow, keep batches small
     CHUNK = 50
     total_inserted = total_updated = total_errors = 0
+    failed_batches = 0
 
     for start in range(0, len(new_reels), CHUNK):
         chunk = new_reels[start:start + CHUNK]
         print(f"\n⬆️  Sending reels {start+1}–{start+len(chunk)} of {len(new_reels)}...")
-        resp = requests.post(
-            f"{API_SERVER}/api/import-reels",
-            json={"reels": chunk},
-            headers=headers,
-            timeout=120,
-        )
+        try:
+            resp = post_with_retry(
+                f"{API_SERVER}/api/import-reels", {"reels": chunk}, headers, timeout=120
+            )
+        except requests.RequestException as e:
+            print(f"  ❌ {type(e).__name__}: {e}")
+            total_errors += len(chunk)
+            failed_batches += 1
+            continue
         if not resp.ok:
             print(f"  ❌ HTTP {resp.status_code}: {resp.text[:300]}")
             total_errors += len(chunk)
+            failed_batches += 1
             continue
         data = resp.json()
         ins = data.get("inserted", 0)
@@ -292,8 +314,16 @@ def main():
             for e in data["errorDetails"][:3]:
                 print(f"     ⚠️  {e}")
 
-    # Bonuses
-    if bonus_payments:
+    # Bonuses are additive, so they are only safe once every reel batch landed:
+    # the import resets each reel's payout to its base amount, and a bonus added
+    # on top of a reel that missed that reset would be counted twice. For the
+    # same reason the bonus call itself is never retried.
+    bonus_failed = False
+    if bonus_payments and failed_batches:
+        print(f"\n⏸  Skipping {len(bonus_payments)} bonus payments: {failed_batches} reel batch(es) failed. "
+              "They will apply on the next clean run.")
+        bonus_failed = True
+    elif bonus_payments:
         print(f"\n⬆️  Sending {len(bonus_payments)} bonus payments...")
         resp = requests.post(
             f"{API_SERVER}/api/apply-bonuses",
@@ -306,8 +336,12 @@ def main():
             print(f"  ✅ applied={d.get('applied')}, missing={d.get('missing')}, errors={d.get('errors')}")
         else:
             print(f"  ❌ HTTP {resp.status_code}: {resp.text[:200]}")
+            bonus_failed = True
 
     print(f"\n🎉 Done! Total: inserted={total_inserted}, updated={total_updated}, errors={total_errors}")
+    # Non-zero exit so systemd records the run as failed instead of silently succeeding.
+    if total_errors or bonus_failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
