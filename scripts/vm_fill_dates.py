@@ -21,11 +21,11 @@ import requests
 RENDER_API   = "https://instagram-pr-api.onrender.com"
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://xzutldcwrlrfkzkqtjyn.supabase.co")
 IMPORT_TOKEN = os.environ.get("IMPORT_REELS_TOKEN", "")
+# Same accounts the live scraper API uses (its ACCOUNT_WEIGHTS); the others'
+# sessions have expired and only fail with LoginRequired.
 COOKIE_FILES = [
     "/home/ubuntu/instagram_view_counter_api/cookies_bhdemo2025.txt",
     "/home/ubuntu/instagram_view_counter_api/cookies_hatke_automation.txt",
-    "/home/ubuntu/instagram_view_counter_api/cookies_goodmorningcuties.txt",
-    "/home/ubuntu/instagram_view_counter_api/cookies_insta_automation.txt",
 ]
 WRITE_BATCH  = 5
 DELAY_SEC    = 1.5   # slower = fewer rate-limit errors
@@ -73,7 +73,11 @@ def flush(batch):
         return 0, len(batch)
 
 def load_missing_from_db(limit):
-    """Reels with no publish date, newest first so fresh uploads fill soonest."""
+    """Reels with no publish date, most recently imported first.
+
+    Sorted by updated_at, not created_at: the sheet import leaves created_at
+    null, which would push fresh reels behind old deleted ones every run.
+    """
     key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
     headers = {"apikey": key, "Authorization": f"Bearer {key}"}
     reels, page = [], 1000
@@ -84,7 +88,7 @@ def load_missing_from_db(limit):
                 "select": "shortcode,permalink,url,inputurl,videoplaycount",
                 "takenat": "is.null",
                 "shortcode": "not.is.null",
-                "order": "created_at.desc.nullslast",
+                "order": "updated_at.desc.nullslast",
             },
             headers={**headers, "Range": f"{len(reels)}-{len(reels) + page - 1}"},
             timeout=30,
