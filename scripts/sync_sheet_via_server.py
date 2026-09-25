@@ -2,7 +2,7 @@
 """
 Sync payment-tracking Google Sheet → Supabase via the Render API server.
 
-Reads April, May, June worksheets, builds a list of reels + bonuses,
+Reads the month worksheets, builds a list of reels + bonuses,
 then POSTs them to:
   POST https://instagram-pr-api.onrender.com/api/import-reels  (upsert reels)
   POST https://instagram-pr-api.onrender.com/api/apply-bonuses (add bonus payout)
@@ -14,6 +14,8 @@ Usage:
     python3 scripts/sync_sheet_via_server.py --apply   # write for real
     python3 scripts/sync_sheet_via_server.py --days 90 # wider window (default 90)
     python3 scripts/sync_sheet_via_server.py --sheet June  # single sheet only
+
+With no --sheet, it syncs the previous and current month's tabs.
 """
 from __future__ import annotations
 
@@ -41,9 +43,9 @@ IMPORT_TOKEN = os.environ.get("IMPORT_REELS_TOKEN", "")  # optional auth header
 
 # Normalize handler name variants → canonical email local-part
 HANDLER_NORMALIZE = {
-    "gurimar":    "gurnimar",
-    "gurnimar":   "gurnimar",
-    "gurnimarjit":"gurnimar",
+    "gurimar":    "gurnimarjit",
+    "gurnimar":   "gurnimarjit",
+    "gurnimarjit":"gurnimarjit",
     "muskan":     "muskan",
     "yash":       "yash",
     "yashmadaan": "yashmadaan",
@@ -149,12 +151,23 @@ def main():
     args = ap.parse_args()
 
     cutoff = datetime.utcnow() - timedelta(days=args.days)
-    sheets_to_process = [args.sheet] if args.sheet else ["April", "May", "June", "july"]
-    print(f"📅 Window: last {args.days} days (>= {cutoff.date()})")
-    print(f"📋 Sheets: {sheets_to_process}\n")
-
     gc = gspread.service_account(filename=SERVICE_ACCOUNT_JSON)
     sh = gc.open_by_url(SHEET_URL)
+
+    # Tabs are named after months, with inconsistent casing ("july"), so match
+    # case-insensitively against the real tab titles.
+    tabs_by_lower = {ws.title.strip().lower(): ws.title for ws in sh.worksheets()}
+    if args.sheet:
+        sheets_to_process = [tabs_by_lower.get(args.sheet.strip().lower(), args.sheet)]
+    else:
+        # Default: previous month + current month, so a scheduled run always picks
+        # up the newest tab and late payments confirmed on last month's tab.
+        today = datetime.utcnow()
+        prev = today.replace(day=1) - timedelta(days=1)
+        wanted = [datetime(prev.year, prev.month, 1).strftime("%B"), today.strftime("%B")]
+        sheets_to_process = [tabs_by_lower.get(m.lower(), m) for m in wanted]
+    print(f"📅 Window: last {args.days} days (>= {cutoff.date()})")
+    print(f"📋 Sheets: {sheets_to_process}\n")
 
     new_reels = []
     bonus_payments = []
@@ -167,7 +180,7 @@ def main():
             print(f"⚠️  Sheet '{ws_name}' not found — skipping")
             continue
 
-        fallback_month = SHEET_MONTH.get(ws_name)
+        fallback_month = SHEET_MONTH.get(ws_name.strip().capitalize())
         rows = ws.get_all_values()
         print(f"  {ws_name}: {len(rows)-1} data rows")
 

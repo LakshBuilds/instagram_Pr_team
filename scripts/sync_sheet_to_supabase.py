@@ -62,7 +62,8 @@ SUPABASE_KEY = (
 
 # Normalize team-member name variants → canonical lowercase email local-part
 HANDLER_NORMALIZE = {
-    "gurimar": "gurnimar",          # typo seen in sheet
+    "gurimar": "gurnimarjit",       # typo seen in sheet
+    "gurnimar": "gurnimarjit",
     "muskan": "muskan",
     "yash": "yash",
     "rajoshree": "rajoshree",
