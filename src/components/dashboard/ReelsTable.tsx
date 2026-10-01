@@ -270,9 +270,13 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
       console.log(`📊 Reel stats: views=${viewCount}, likes=${likesCount}, comments=${commentsCount}, shouldArchive=${shouldArchive}`);
       const shouldUnarchive = !shouldArchive;
 
-      // Always update view counts, even if 0 - this ensures data accuracy
-      updateData.videoplaycount = viewCount;
-      updateData.videoviewcount = viewCount;
+      // Only a real, higher count replaces the stored one. Instagram often hides
+      // views while still returning likes, which arrives here as 0; writing that
+      // would wipe a known count. (The database enforces the same rule.)
+      if (viewCount > 1 && viewCount >= currentViews) {
+        updateData.videoplaycount = viewCount;
+        updateData.videoviewcount = viewCount;
+      }
 
       if (typeof transformed.likescount === 'number') {
         updateData.likescount = transformed.likescount;
@@ -323,7 +327,8 @@ const ReelsTable = ({ reels, onUpdate }: ReelsTableProps) => {
         }
         
         const { error } = await supabase.from("reels").update({
-          videoplaycount: newViewCount,
+          // Keep the stored count unless Apify returned a real, higher one.
+          ...(newViewCount > 1 && newViewCount >= currentViews ? { videoplaycount: newViewCount } : {}),
           likescount: newLikesCount,
           commentscount: newCommentsCount,
           lastupdatedat: new Date().toISOString(),

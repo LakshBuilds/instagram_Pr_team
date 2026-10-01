@@ -120,12 +120,15 @@ export async function refreshSingleReel(
       };
     }
 
+    // Only a real, higher count replaces the stored one; Instagram often hides
+    // views while returning likes, which would otherwise overwrite them with 0.
+    const fetchedViews = transformedData.videoplaycount ?? transformedData.videoviewcount ?? 0;
+    const keepViews = !(fetchedViews > 1 && fetchedViews >= (oldViews ?? 0));
+
     const { error: updateError } = await supabase
       .from('reels')
       .update({
-        // Always update all fields, even if 0 - ensures data accuracy
-        videoplaycount: transformedData.videoplaycount ?? 0,
-        videoviewcount: transformedData.videoviewcount ?? 0,
+        ...(keepViews ? {} : { videoplaycount: fetchedViews, videoviewcount: fetchedViews }),
         likescount: transformedData.likescount ?? 0,
         commentscount: transformedData.commentscount ?? 0,
         last_refreshed_at: refreshTimestamp.toISOString(),

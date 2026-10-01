@@ -442,7 +442,8 @@ app.post('/api/bulk-update-views', async (req, res) => {
   for (const u of updates) {
     if (!u.shortcode) { errors++; continue; }
     const patch = { lastupdatedat: new Date().toISOString(), refresh_failed: false };
-    if (u.videoplaycount != null) patch.videoplaycount = u.videoplaycount;
+    // Null/0/1 mean the scrape found no count; never let them replace a real one.
+    if (Number(u.videoplaycount) > 1) patch.videoplaycount = u.videoplaycount;
     if (u.likescount     != null) patch.likescount     = u.likescount;
     if (u.commentscount  != null) patch.commentscount  = u.commentscount;
     if (u.takenat        != null) patch.takenat        = u.takenat;
