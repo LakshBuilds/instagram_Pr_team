@@ -15,6 +15,7 @@ Usage:
     python3 scripts/sync_views_to_sheet.py              # dry-run: previous + current month tabs
     python3 scripts/sync_views_to_sheet.py --apply
     python3 scripts/sync_views_to_sheet.py --sheet August --apply
+    python3 scripts/sync_views_to_sheet.py --all-tabs --apply   # every month tab
 """
 from __future__ import annotations
 
@@ -58,6 +59,15 @@ def as_number(cell: str) -> int | None:
         return None
 
 
+MONTHS = ["january", "february", "march", "april", "may", "june", "july",
+          "august", "september", "october", "november", "december"]
+
+
+def month_tabs(sh) -> list[str]:
+    """Every tab named after a month, in sheet order."""
+    return [ws.title for ws in sh.worksheets() if ws.title.strip().lower() in MONTHS]
+
+
 def default_tabs(sh) -> list[str]:
     by_lower = {ws.title.strip().lower(): ws.title for ws in sh.worksheets()}
     today = datetime.utcnow()
@@ -70,10 +80,11 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="Write to the sheet. Default: dry-run")
     ap.add_argument("--sheet", help="Only this tab (e.g. August)")
+    ap.add_argument("--all-tabs", action="store_true", help="Every month tab, not just previous + current")
     args = ap.parse_args()
 
     sh = gspread.service_account(filename=SERVICE_ACCOUNT_JSON).open_by_url(SHEET_URL)
-    tabs = [args.sheet] if args.sheet else default_tabs(sh)
+    tabs = [args.sheet] if args.sheet else month_tabs(sh) if args.all_tabs else default_tabs(sh)
     print(f"{'APPLY' if args.apply else 'DRY-RUN'}: tabs {tabs}")
 
     for tab in tabs:

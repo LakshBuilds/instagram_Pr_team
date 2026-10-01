@@ -39,7 +39,7 @@ echo "[$(date -u +%FT%TZ)] sheet sync: exit $sync_status"
 
 # Copy the latest view counts from the dashboard into column Q of the sheet.
 echo "[$(date -u +%FT%TZ)] views to sheet: start"
-python3 -u scripts/sync_views_to_sheet.py --apply
+python3 -u scripts/sync_views_to_sheet.py --all-tabs --apply
 views_status=$?
 echo "[$(date -u +%FT%TZ)] views to sheet: exit $views_status"
 
