@@ -11,8 +11,6 @@
 #   SUPABASE_SERVICE_ROLE_KEY=eyJ...
 #   IMPORT_REELS_TOKEN=...            # only if set on the Render server
 #
-# FILL_DATES_LIMIT caps reels scraped per run (default 150). The scraper shares
-# Instagram accounts with the live API, so keep this modest.
 
 set -uo pipefail
 
@@ -44,8 +42,9 @@ views_status=$?
 echo "[$(date -u +%FT%TZ)] views to sheet: exit $views_status"
 
 # Runs even if the sync failed: dates for already-imported reels still help.
+# Dates are decoded from each reel's shortcode; no Instagram requests.
 echo "[$(date -u +%FT%TZ)] fill dates: start"
-python3 -u scripts/vm_fill_dates.py --from-db --limit "${FILL_DATES_LIMIT:-150}"
+python3 -u scripts/fill_dates_from_shortcode.py --apply
 fill_status=$?
 echo "[$(date -u +%FT%TZ)] fill dates: exit $fill_status"
 
