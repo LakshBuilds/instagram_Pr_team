@@ -1,7 +1,7 @@
 #!/bin/bash
 # Daily job for the VM: import the payment sheet into Supabase, then fill in
 # publish dates (takenat) for reels that don't have one yet, so they show up in
-# the dashboard's monthly and date-range views.
+# the dashboard's monthly and date-range views. Also copies view counts into column Q of the sheet.
 #
 # Runs from sheet-sync.service / sheet-sync.timer on the VM (03:00 UTC), which
 # puts the scraper's venv on PATH and sets IG_SCRAPER_PROXY.
@@ -37,10 +37,16 @@ python3 -u scripts/sync_sheet_via_server.py --apply
 sync_status=$?
 echo "[$(date -u +%FT%TZ)] sheet sync: exit $sync_status"
 
+# Copy the latest view counts from the dashboard into column Q of the sheet.
+echo "[$(date -u +%FT%TZ)] views to sheet: start"
+python3 -u scripts/sync_views_to_sheet.py --apply
+views_status=$?
+echo "[$(date -u +%FT%TZ)] views to sheet: exit $views_status"
+
 # Runs even if the sync failed: dates for already-imported reels still help.
 echo "[$(date -u +%FT%TZ)] fill dates: start"
 python3 -u scripts/vm_fill_dates.py --from-db --limit "${FILL_DATES_LIMIT:-150}"
 fill_status=$?
 echo "[$(date -u +%FT%TZ)] fill dates: exit $fill_status"
 
-[ "$sync_status" -eq 0 ] && [ "$fill_status" -eq 0 ]
+[ "$sync_status" -eq 0 ] && [ "$views_status" -eq 0 ] && [ "$fill_status" -eq 0 ]
