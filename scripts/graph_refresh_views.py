@@ -157,6 +157,8 @@ def main() -> int:
     ap.add_argument("--days", type=int, default=30, help="Refresh reels posted in the last N days (default 30)")
     ap.add_argument("--creator", help="Only this handle (ignores --days)")
     ap.add_argument("--apply", action="store_true", help="Write to Supabase. Default: dry-run")
+    ap.add_argument("--wait-on-limit", action="store_true",
+                    help="On Meta's rate limit, wait 15 min and resume instead of stopping (for long full runs)")
     # Meta allows roughly 200 calls/hour for this app; one creator per ~20 s stays well under it.
     ap.add_argument("--pause", type=float, default=20.0, help="Seconds between creators (default 20)")
     args = ap.parse_args()
@@ -180,10 +182,20 @@ def main() -> int:
     not_found: list[str] = []
     oldest = datetime.now(timezone.utc) - timedelta(days=args.days + 7)
     for i, (handle, reels) in enumerate(sorted(creators.items()), 1):
+        if args.creator or args.days > 3650:
+            # Old reels sit deep in a feed: page back far enough to reach them.
+            oldest = min(posted_at(sc) for sc in reels) - timedelta(days=7)
         try:
-            if args.creator:
-                oldest = min(posted_at(sc) for sc in reels) - timedelta(days=7)
-            media = fetch_creator_media(handle, set(reels), oldest)
+            while True:
+                try:
+                    media = fetch_creator_media(handle, set(reels), oldest)
+                    break
+                except GraphError as e:
+                    if e.code in RATE_LIMIT_CODES and args.wait_on_limit:
+                        print(f"⏸  Rate limited at creator {i}/{len(creators)}; waiting 15 min", flush=True)
+                        time.sleep(900)
+                        continue
+                    raise
         except GraphError as e:
             if e.code in RATE_LIMIT_CODES:
                 print(f"🛑 Rate limited at creator {i}/{len(creators)}: {e}. Stopping; rerun later.")
@@ -192,6 +204,7 @@ def main() -> int:
             # Typically code 110 / "Invalid user id": personal account or wrong handle.
             not_found.append(f"{handle} ({e.code})")
             stats["creators_unavailable"] += 1
+            time.sleep(args.pause)
             continue
         stats["creators_ok"] += 1
         for sc, row in reels.items():
