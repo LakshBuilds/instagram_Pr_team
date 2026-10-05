@@ -26,6 +26,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -95,17 +96,55 @@ class GraphError(Exception):
         super().__init__(f"({self.code}) {self.message}")
 
 
-def fetch_creator_media(handle: str, wanted: set[str], oldest: datetime) -> dict[str, dict]:
+# Highest % of Meta's hourly allowance used, from the last response's usage headers.
+LAST_USAGE = 0
+
+
+def note_usage(response: requests.Response) -> None:
+    """Record app / business-use-case usage (% of the hourly limit) from response headers."""
+    global LAST_USAGE
+    peak = 0
+    for name in ("x-app-usage", "x-business-use-case-usage"):
+        raw = response.headers.get(name)
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            continue
+        entries = [data] if name == "x-app-usage" else [e for v in data.values() for e in v]
+        for e in entries:
+            peak = max(peak, *(int(e.get(k, 0) or 0) for k in ("call_count", "total_time", "total_cputime")))
+    LAST_USAGE = peak
+
+
+def pace(base: float) -> None:
+    """Go fast while usage is low; slow down well before Meta's limit."""
+    if LAST_USAGE >= 95:
+        delay = 600
+    elif LAST_USAGE >= 85:
+        delay = 120
+    elif LAST_USAGE >= 70:
+        delay = 30
+    else:
+        delay = base
+    if delay > base:
+        print(f"   usage {LAST_USAGE}% of Meta's hourly limit → waiting {delay}s", flush=True)
+    time.sleep(delay)
+
+
+def fetch_creator_media(handle: str, wanted: set[str], oldest: datetime, max_pages: int = 4) -> dict[str, dict]:
     """Page through a creator's media until every wanted shortcode is found or we pass `oldest`."""
     token, ig_id = os.environ["META_GRAPH_TOKEN"], os.environ["META_IG_USER_ID"]
     found: dict[str, dict] = {}
     after = None
-    for _ in range(10):  # up to ~500 posts
+    for _ in range(max_pages):  # 50 posts per call
         media = f"media.limit(50){'.after(' + after + ')' if after else ''}{{{MEDIA_FIELDS}}}"
         r = requests.get(f"{GRAPH}/{ig_id}", timeout=60, params={
             "fields": f"business_discovery.username({handle}){{{media}}}",
             "access_token": token,
         })
+        note_usage(r)
         body = r.json()
         if "error" in body:
             raise GraphError(body["error"])
@@ -157,10 +196,13 @@ def main() -> int:
     ap.add_argument("--days", type=int, default=30, help="Refresh reels posted in the last N days (default 30)")
     ap.add_argument("--creator", help="Only this handle (ignores --days)")
     ap.add_argument("--apply", action="store_true", help="Write to Supabase. Default: dry-run")
+    ap.add_argument("--max-pages", type=int, default=4,
+                    help="Calls per creator when paging back for older reels (50 posts each, default 4)")
+    ap.add_argument("--start-at", type=int, default=1, help="Resume from this creator number (1-based)")
     ap.add_argument("--wait-on-limit", action="store_true",
                     help="On Meta's rate limit, wait 15 min and resume instead of stopping (for long full runs)")
-    # Meta allows roughly 200 calls/hour for this app; one creator per ~20 s stays well under it.
-    ap.add_argument("--pause", type=float, default=20.0, help="Seconds between creators (default 20)")
+    # Base pause; pace() stretches it automatically as Meta's usage headers approach the limit.
+    ap.add_argument("--pause", type=float, default=2.0, help="Base seconds between creators (default 2)")
     args = ap.parse_args()
 
     missing = [k for k in ("META_GRAPH_TOKEN", "META_IG_USER_ID", "SUPABASE_SERVICE_ROLE_KEY") if not os.environ.get(k)]
@@ -182,18 +224,20 @@ def main() -> int:
     not_found: list[str] = []
     oldest = datetime.now(timezone.utc) - timedelta(days=args.days + 7)
     for i, (handle, reels) in enumerate(sorted(creators.items()), 1):
+        if i < args.start_at:
+            continue
         if args.creator or args.days > 3650:
             # Old reels sit deep in a feed: page back far enough to reach them.
             oldest = min(posted_at(sc) for sc in reels) - timedelta(days=7)
         try:
             while True:
                 try:
-                    media = fetch_creator_media(handle, set(reels), oldest)
+                    media = fetch_creator_media(handle, set(reels), oldest, args.max_pages)
                     break
                 except GraphError as e:
                     if e.code in RATE_LIMIT_CODES and args.wait_on_limit:
-                        print(f"⏸  Rate limited at creator {i}/{len(creators)}; waiting 15 min", flush=True)
-                        time.sleep(900)
+                        print(f"⏸  Rate limited at creator {i}/{len(creators)}; waiting 5 min", flush=True)
+                        time.sleep(300)
                         continue
                     raise
         except GraphError as e:
@@ -204,7 +248,7 @@ def main() -> int:
             # Typically code 110 / "Invalid user id": personal account or wrong handle.
             not_found.append(f"{handle} ({e.code})")
             stats["creators_unavailable"] += 1
-            time.sleep(args.pause)
+            pace(args.pause)
             continue
         stats["creators_ok"] += 1
         for sc, row in reels.items():
@@ -221,7 +265,9 @@ def main() -> int:
             if changed:
                 stats["reels_changed"] += 1
                 print(f"  {handle:<24} {sc}  {', '.join(changed)}")
-        time.sleep(args.pause)
+        if i % 25 == 0:
+            print(f"… creator {i}/{len(creators)}, usage {LAST_USAGE}%", flush=True)
+        pace(args.pause)
 
     print("\nSummary:", dict(stats))
     if not_found:
