@@ -157,7 +157,8 @@ def main() -> int:
     ap.add_argument("--days", type=int, default=30, help="Refresh reels posted in the last N days (default 30)")
     ap.add_argument("--creator", help="Only this handle (ignores --days)")
     ap.add_argument("--apply", action="store_true", help="Write to Supabase. Default: dry-run")
-    ap.add_argument("--pause", type=float, default=1.0, help="Seconds between creators (default 1)")
+    # Meta allows roughly 200 calls/hour for this app; one creator per ~20 s stays well under it.
+    ap.add_argument("--pause", type=float, default=20.0, help="Seconds between creators (default 20)")
     args = ap.parse_args()
 
     missing = [k for k in ("META_GRAPH_TOKEN", "META_IG_USER_ID", "SUPABASE_SERVICE_ROLE_KEY") if not os.environ.get(k)]

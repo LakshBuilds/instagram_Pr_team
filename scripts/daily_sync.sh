@@ -41,6 +41,15 @@ python3 -u scripts/sync_views_to_sheet.py --all-tabs --apply
 views_status=$?
 echo "[$(date -u +%FT%TZ)] views to sheet: exit $views_status"
 
+# Official view counts from Meta's Graph API (Business Discovery), when configured.
+if [ -n "${META_GRAPH_TOKEN:-}" ] && [ -n "${META_IG_USER_ID:-}" ]; then
+  echo "[$(date -u +%FT%TZ)] graph views: start"
+  python3 -u scripts/graph_refresh_views.py --days "${GRAPH_REFRESH_DAYS:-30}" --apply
+  echo "[$(date -u +%FT%TZ)] graph views: exit $?"
+else
+  echo "[$(date -u +%FT%TZ)] graph views: skipped (META_GRAPH_TOKEN / META_IG_USER_ID not set)"
+fi
+
 # Runs even if the sync failed: dates for already-imported reels still help.
 # Dates are decoded from each reel's shortcode; no Instagram requests.
 echo "[$(date -u +%FT%TZ)] fill dates: start"
