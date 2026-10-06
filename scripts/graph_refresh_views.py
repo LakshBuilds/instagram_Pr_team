@@ -29,6 +29,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from collections import defaultdict
@@ -39,6 +40,8 @@ import requests
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://xzutldcwrlrfkzkqtjyn.supabase.co")
 GRAPH = f"https://graph.facebook.com/{os.environ.get('META_GRAPH_VERSION', 'v23.0')}"
 MEDIA_FIELDS = "permalink,media_product_type,view_count,like_count,comments_count,timestamp"
+# Meta meters call time/CPU too; asking for less per post fits more calls in the hourly limit.
+LIGHT_MEDIA_FIELDS = "permalink,view_count"
 HANDLE_RE = re.compile(r"^[A-Za-z0-9._]{1,30}$")
 PERMALINK_RE = re.compile(r"instagram\.com/(?:[^/]+/)?(?:reels?|p|tv)/([A-Za-z0-9_-]+)")
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
@@ -62,10 +65,13 @@ def supabase_headers() -> dict:
     return {"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"}
 
 
-def load_target_reels(days: int, creator: str | None) -> dict[str, dict[str, dict]]:
+def load_target_reels(days: int, creator: str | None, skip_dead: bool = False) -> dict[str, dict[str, dict]]:
     """{handle_lower: {shortcode: row}} for reels posted in the window."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     params = {"select": "id,shortcode,ownerusername,videoplaycount,takenat"}
+    if skip_dead:
+        # Reels already marked unavailable; creators left with none are skipped entirely.
+        params["or"] = "(refresh_failed.is.null,refresh_failed.eq.false)"
     if creator:
         params["ownerusername"] = f"ilike.{creator}"
     rows, start = [], 0
@@ -133,13 +139,14 @@ def pace(base: float) -> None:
     time.sleep(delay)
 
 
-def fetch_creator_media(handle: str, wanted: set[str], oldest: datetime, max_pages: int = 4) -> dict[str, dict]:
+def fetch_creator_media(handle: str, wanted: set[str], oldest: datetime, max_pages: int = 4,
+                        fields: str = MEDIA_FIELDS) -> dict[str, dict]:
     """Page through a creator's media until every wanted shortcode is found or we pass `oldest`."""
     token, ig_id = os.environ["META_GRAPH_TOKEN"], os.environ["META_IG_USER_ID"]
     found: dict[str, dict] = {}
     after = None
     for _ in range(max_pages):  # 50 posts per call
-        media = f"media.limit(50){'.after(' + after + ')' if after else ''}{{{MEDIA_FIELDS}}}"
+        media = f"media.limit(50){'.after(' + after + ')' if after else ''}{{{fields}}}"
         r = requests.get(f"{GRAPH}/{ig_id}", timeout=60, params={
             "fields": f"business_discovery.username({handle}){{{media}}}",
             "access_token": token,
@@ -156,9 +163,9 @@ def fetch_creator_media(handle: str, wanted: set[str], oldest: datetime, max_pag
         items = page.get("data") or []
         last_ts = items[-1].get("timestamp") if items else None
         after = (page.get("paging") or {}).get("cursors", {}).get("after")
-        if len(found) == len(wanted) or not after or not last_ts:
+        if len(found) == len(wanted) or not after or not items:
             break
-        if datetime.fromisoformat(last_ts.replace("+0000", "+00:00")) < oldest:
+        if last_ts and datetime.fromisoformat(last_ts.replace("+0000", "+00:00")) < oldest:
             break
     return found
 
@@ -199,6 +206,11 @@ def main() -> int:
     ap.add_argument("--max-pages", type=int, default=4,
                     help="Calls per creator when paging back for older reels (50 posts each, default 4)")
     ap.add_argument("--start-at", type=int, default=1, help="Resume from this creator number (1-based)")
+    ap.add_argument("--resume-from", help="Resume from this handle (creators run alphabetically)")
+    ap.add_argument("--light", action="store_true", help="Fetch only permalink + view_count (cheaper calls)")
+    ap.add_argument("--skip-dead", action="store_true", help="Skip reels already marked refresh_failed")
+    ap.add_argument("--yield-to", metavar="SERVICE",
+                    help="Pause while this systemd service is running (e.g. sheet-sync.service)")
     ap.add_argument("--wait-on-limit", action="store_true",
                     help="On Meta's rate limit, wait 15 min and resume instead of stopping (for long full runs)")
     # Base pause; pace() stretches it automatically as Meta's usage headers approach the limit.
@@ -210,7 +222,7 @@ def main() -> int:
         print(f"❌ Missing env: {', '.join(missing)}")
         return 2
 
-    targets = load_target_reels(args.days, args.creator)
+    targets = load_target_reels(args.days, args.creator, args.skip_dead)
     no_handle = {k: v for k, v in targets.items() if k.startswith("__no_handle__:")}
     creators = {k: v for k, v in targets.items() if k not in no_handle}
     total = sum(len(v) for v in creators.values())
@@ -223,16 +235,24 @@ def main() -> int:
     stats = defaultdict(int)
     not_found: list[str] = []
     oldest = datetime.now(timezone.utc) - timedelta(days=args.days + 7)
+    fields = LIGHT_MEDIA_FIELDS if args.light else MEDIA_FIELDS
     for i, (handle, reels) in enumerate(sorted(creators.items()), 1):
-        if i < args.start_at:
+        if i < args.start_at or (args.resume_from and handle < args.resume_from.lower()):
             continue
+        if args.yield_to:
+            waited = False
+            while subprocess.run(["systemctl", "is-active", "--quiet", args.yield_to]).returncode == 0:
+                if not waited:
+                    print(f"⏸  {args.yield_to} is running; yielding Meta's allowance to it", flush=True)
+                    waited = True
+                time.sleep(60)
         if args.creator or args.days > 3650:
             # Old reels sit deep in a feed: page back far enough to reach them.
             oldest = min(posted_at(sc) for sc in reels) - timedelta(days=7)
         try:
             while True:
                 try:
-                    media = fetch_creator_media(handle, set(reels), oldest, args.max_pages)
+                    media = fetch_creator_media(handle, set(reels), oldest, args.max_pages, fields)
                     break
                 except GraphError as e:
                     if e.code in RATE_LIMIT_CODES and args.wait_on_limit:
