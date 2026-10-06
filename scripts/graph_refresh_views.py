@@ -241,7 +241,9 @@ def main() -> int:
             continue
         if args.yield_to:
             waited = False
-            while subprocess.run(["systemctl", "is-active", "--quiet", args.yield_to]).returncode == 0:
+            # A oneshot service reports "activating" (not "active") while it runs.
+            while subprocess.run(["systemctl", "is-active", args.yield_to], capture_output=True,
+                                 text=True).stdout.strip() in ("active", "activating"):
                 if not waited:
                     print(f"⏸  {args.yield_to} is running; yielding Meta's allowance to it", flush=True)
                     waited = True
