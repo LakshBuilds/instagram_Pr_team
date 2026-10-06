@@ -76,8 +76,8 @@ def load_target_reels(days: int, creator: str | None, skip_dead: bool = False) -
         params["ownerusername"] = f"ilike.{creator}"
     rows, start = [], 0
     while True:
-        r = requests.get(f"{SUPABASE_URL}/rest/v1/reels", params=params,
-                         headers={**supabase_headers(), "Range": f"{start}-{start + 999}"}, timeout=30)
+        r = request("GET", f"{SUPABASE_URL}/rest/v1/reels", params=params,
+                    headers={**supabase_headers(), "Range": f"{start}-{start + 999}"}, timeout=30)
         r.raise_for_status()
         page = r.json()
         rows += page
@@ -93,6 +93,21 @@ def load_target_reels(days: int, creator: str | None, skip_dead: bool = False) -
             continue
         by_creator[handle.lower() if HANDLE_RE.match(handle) else "__no_handle__:" + handle][sc] = row
     return by_creator
+
+
+def request(method: str, url: str, **kw) -> requests.Response:
+    """requests.request, retrying network errors and 5xx for up to ~30 min (long runs must not die on a blip)."""
+    for attempt in range(30):
+        try:
+            r = requests.request(method, url, **kw)
+            if r.status_code < 500:
+                return r
+            problem = f"HTTP {r.status_code}"
+        except requests.RequestException as e:
+            problem = type(e).__name__
+        print(f"   {problem} from {url.split('/')[2]}; retry {attempt + 1}/30 in 60s", flush=True)
+        time.sleep(60)
+    raise RuntimeError(f"{method} {url}: still failing after 30 retries")
 
 
 class GraphError(Exception):
@@ -147,12 +162,15 @@ def fetch_creator_media(handle: str, wanted: set[str], oldest: datetime, max_pag
     after = None
     for _ in range(max_pages):  # 50 posts per call
         media = f"media.limit(50){'.after(' + after + ')' if after else ''}{{{fields}}}"
-        r = requests.get(f"{GRAPH}/{ig_id}", timeout=60, params={
+        r = request("GET", f"{GRAPH}/{ig_id}", timeout=60, params={
             "fields": f"business_discovery.username({handle}){{{media}}}",
             "access_token": token,
         })
         note_usage(r)
-        body = r.json()
+        try:
+            body = r.json()
+        except ValueError:
+            body = {"error": {"code": None, "message": f"non-JSON response, HTTP {r.status_code}"}}
         if "error" in body:
             raise GraphError(body["error"])
         page = (body.get("business_discovery") or {}).get("media") or {}
@@ -177,7 +195,7 @@ def apply_update(row: dict, m: dict) -> list[str]:
     changed = []
 
     def patch(params: dict, body: dict) -> int:
-        r = requests.patch(url, params={"id": f"eq.{row['id']}", **params}, headers=h, json=body, timeout=30)
+        r = request("PATCH", url, params={"id": f"eq.{row['id']}", **params}, headers=h, json=body, timeout=30)
         r.raise_for_status()
         return int((r.headers.get("content-range") or "*/0").split("/")[-1] or 0)
 
@@ -198,6 +216,12 @@ def apply_update(row: dict, m: dict) -> list[str]:
     return changed
 
 
+def record_progress(path: str | None, handle: str) -> None:
+    if path:
+        with open(path, "w") as f:
+            f.write(handle)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--days", type=int, default=30, help="Refresh reels posted in the last N days (default 30)")
@@ -207,6 +231,7 @@ def main() -> int:
                     help="Calls per creator when paging back for older reels (50 posts each, default 4)")
     ap.add_argument("--start-at", type=int, default=1, help="Resume from this creator number (1-based)")
     ap.add_argument("--resume-from", help="Resume from this handle (creators run alphabetically)")
+    ap.add_argument("--progress-file", help="Record each finished creator here; resume after it when restarted")
     ap.add_argument("--light", action="store_true", help="Fetch only permalink + view_count (cheaper calls)")
     ap.add_argument("--skip-dead", action="store_true", help="Skip reels already marked refresh_failed")
     ap.add_argument("--yield-to", metavar="SERVICE",
@@ -221,6 +246,12 @@ def main() -> int:
     if missing:
         print(f"❌ Missing env: {', '.join(missing)}")
         return 2
+
+    done_through = ""  # last creator finished by an earlier, interrupted run
+    if args.progress_file and os.path.exists(args.progress_file):
+        done_through = open(args.progress_file).read().strip().lower()
+        if done_through:
+            print(f"↻ Resuming after {done_through} (from {args.progress_file})", flush=True)
 
     targets = load_target_reels(args.days, args.creator, args.skip_dead)
     no_handle = {k: v for k, v in targets.items() if k.startswith("__no_handle__:")}
@@ -237,7 +268,8 @@ def main() -> int:
     oldest = datetime.now(timezone.utc) - timedelta(days=args.days + 7)
     fields = LIGHT_MEDIA_FIELDS if args.light else MEDIA_FIELDS
     for i, (handle, reels) in enumerate(sorted(creators.items()), 1):
-        if i < args.start_at or (args.resume_from and handle < args.resume_from.lower()):
+        if i < args.start_at or (args.resume_from and handle < args.resume_from.lower()) \
+                or (done_through and handle <= done_through):
             continue
         if args.yield_to:
             waited = False
@@ -270,6 +302,7 @@ def main() -> int:
             # Typically code 110 / "Invalid user id": personal account or wrong handle.
             not_found.append(f"{handle} ({e.code})")
             stats["creators_unavailable"] += 1
+            record_progress(args.progress_file, handle)
             pace(args.pause)
             continue
         stats["creators_ok"] += 1
@@ -287,6 +320,7 @@ def main() -> int:
             if changed:
                 stats["reels_changed"] += 1
                 print(f"  {handle:<24} {sc}  {', '.join(changed)}")
+        record_progress(args.progress_file, handle)
         if i % 25 == 0:
             print(f"… creator {i}/{len(creators)}, usage {LAST_USAGE}%", flush=True)
         pace(args.pause)
