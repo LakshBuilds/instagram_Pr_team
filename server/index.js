@@ -743,6 +743,129 @@ app.get('/api/link-tracker/stats/:code', async (req, res) => {
   }
 });
 
+// ----------------------------------------------------------------------------
+// /installs/:code — a shareable page that shows one link's install total.
+// ----------------------------------------------------------------------------
+//
+// The page loads instantly and fetches /installs/:code.json, which serves the
+// cached numbers right away and refreshes them in the background once they are
+// older than INSTALLS_FRESH_MS. Only the very first lookup for a code waits on
+// the ~50s upstream call.
+
+const INSTALLS_FRESH_MS = 10 * 60 * 1000;
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // upstream day keys are Indian dates
+
+function installTotals(entry) {
+  const istDay = (msAgo) => new Date(Date.now() + IST_OFFSET_MS - msAgo).toISOString().slice(0, 10);
+  const todayKey = istDay(0);
+  const weekAgo = istDay(7 * 86400000);
+  const sum = (days) => {
+    let total = 0, today = 0, last7 = 0;
+    for (const [day, v] of Object.entries(days || {})) {
+      const n = Number(v?.installCount) || 0;
+      total += n;
+      if (day === todayKey) today += n;
+      if (day > weekAgo) last7 += n;
+    }
+    return { total, today, last7 };
+  };
+
+  // Only dayWise reports Android/iOS; monthly is a fallback for extension alone.
+  const daily = entry.daily?.ok ? entry.daily.payload?.data?.result?.Uninstalled || {} : null;
+  const monthly = entry.monthly?.ok ? entry.monthly.payload?.data?.result?.Uninstalled || {} : null;
+
+  const platforms = {};
+  for (const p of ['android', 'ios', 'extension']) {
+    if (daily) platforms[p] = sum(daily[p]);
+    else if (p === 'extension' && monthly) platforms[p] = { total: sum(monthly[p]).total, today: null, last7: null };
+    else platforms[p] = null;
+  }
+  const known = Object.values(platforms).filter(Boolean);
+  return {
+    code: entry.code,
+    fetchedAt: entry.fetchedAt,
+    complete: !!daily,
+    total: known.reduce((a, p) => a + p.total, 0),
+    today: daily ? known.reduce((a, p) => a + p.today, 0) : null,
+    last7: daily ? known.reduce((a, p) => a + p.last7, 0) : null,
+    platforms,
+  };
+}
+
+// Registered before /installs/:code, which would otherwise swallow "X.json".
+app.get('/installs/:code.json', async (req, res) => {
+  if (!USERQUALITY_PASSKEY) {
+    return res.status(503).json({ error: 'USERQUALITY_PASSKEY not configured on the server.' });
+  }
+  const code = String(req.params.code || '').toUpperCase();
+  if (!/^[A-Z0-9_-]{1,64}$/.test(code)) return res.status(400).json({ error: 'Invalid link code.' });
+
+  const cached = uqCache.get(code);
+  try {
+    if (cached) {
+      const refreshing = Date.now() - cached.at > INSTALLS_FRESH_MS || req.query.refresh === '1';
+      if (refreshing) uqFetchBoth(code).catch(() => {});
+      if (!cached.entry.hasData) return res.json({ code, noData: true, refreshing });
+      return res.json({ ...installTotals(cached.entry), refreshing });
+    }
+    const entry = await uqFetchBoth(code);
+    if (!entry.hasData) return res.json({ code, noData: true, refreshing: false });
+    res.json({ ...installTotals(entry), refreshing: false });
+  } catch (error) {
+    res.status(502).json({ error: error.message, code });
+  }
+});
+
+app.get('/installs/:code', (req, res) => {
+  const code = String(req.params.code || '').toUpperCase();
+  if (!/^[A-Z0-9_-]{1,64}$/.test(code)) return res.status(400).send('Invalid link code.');
+  res.type('html').send(`<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${code} · Installs</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--text:#111827;--muted:#6b7280;--line:#e5e7eb;--accent:#ea580c}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#181b21;--text:#f3f4f6;--muted:#9ca3af;--line:#2a2f38;--accent:#fb923c}}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;display:flex;justify-content:center;padding:40px 16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px;width:100%;max-width:440px}
+  .code{font-weight:600;color:var(--muted);word-break:break-all}
+  .big{font-size:56px;font-weight:700;line-height:1.1;margin:8px 0 2px;font-variant-numeric:tabular-nums}
+  .sub{color:var(--muted);font-size:14px}
+  .rows{margin-top:22px;border-top:1px solid var(--line)}
+  .row{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+  .row b{font-weight:600}.hl{color:var(--accent)}
+  .foot{margin-top:16px;font-size:13px;color:var(--muted)}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:s 1s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes s{to{transform:rotate(360deg)}}
+</style></head>
+<body><div class="card">
+  <div class="code">r.buyhatke.com/${code.toLowerCase()}</div>
+  <div id="out"><div class="big">…</div><div class="sub"><span class="spin"></span>Fetching installs from BuyHatke. The first load can take up to a minute.</div></div>
+</div>
+<script>
+const code = ${JSON.stringify(code)};
+const fmt = (n) => n == null ? '—' : n.toLocaleString('en-IN');
+function ago(iso){const m=Math.round((Date.now()-new Date(iso))/60000);return m<1?'just now':m<60?m+' min ago':Math.round(m/60)+' h ago';}
+async function load(){
+  const out=document.getElementById('out');
+  try{
+    const r=await fetch('/installs/'+encodeURIComponent(code)+'.json'+location.search);
+    const d=await r.json();
+    if(d.error) throw new Error(d.error);
+    if(d.noData){out.innerHTML='<div class="big">0</div><div class="sub">No installs recorded for this link yet.</div>';return;}
+    const p=d.platforms, row=(label,v)=>'<div class="row"><span>'+label+'</span><b>'+(v?fmt(v.total):'unavailable')+'</b></div>';
+    out.innerHTML='<div class="big">'+fmt(d.total)+'</div><div class="sub">total installs</div>'+
+      '<div class="rows">'+row('Android app',p.android)+row('iOS app',p.ios)+row('Chrome extension',p.extension)+
+      '<div class="row"><span>Today</span><b class="hl">'+fmt(d.today)+'</b></div>'+
+      '<div class="row"><span>Last 7 days</span><b>'+fmt(d.last7)+'</b></div></div>'+
+      '<div class="foot">'+(d.complete?'':'⚠ BuyHatke timed out on app installs, so only the extension count is shown. ')+
+      'Updated '+ago(d.fetchedAt)+(d.refreshing?' · refreshing in the background, reload in a minute for newer numbers':'')+'</div>';
+  }catch(e){out.innerHTML='<div class="big">—</div><div class="sub">Couldn\\'t load installs: '+String(e.message).replace(/</g,'&lt;')+'. Try reloading.</div>';}
+}
+load();
+</script></body></html>`);
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Apify API server running on http://localhost:${PORT}`);
 });
